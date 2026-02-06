@@ -458,7 +458,7 @@ const SlackReplyToModeByChatTypeSchema = z
 export const SlackAccountSchema = z
   .object({
     name: z.string().optional(),
-    mode: z.enum(["socket", "http"]).optional(),
+    mode: z.enum(["socket", "http", "polling"]).optional(),
     signingSecret: z.string().optional(),
     webhookPath: z.string().optional(),
     capabilities: z.array(z.string()).optional(),
@@ -470,6 +470,8 @@ export const SlackAccountSchema = z
     appToken: z.string().optional(),
     userToken: z.string().optional(),
     userTokenReadOnly: z.boolean().optional().default(true),
+    pollInterval: z.number().int().positive().optional(),
+    myUserId: z.string().optional(),
     allowBots: z.boolean().optional(),
     requireMention: z.boolean().optional(),
     groupPolicy: GroupPolicySchema.optional().default("allowlist"),
@@ -516,7 +518,7 @@ export const SlackAccountSchema = z
   .strict();
 
 export const SlackConfigSchema = SlackAccountSchema.extend({
-  mode: z.enum(["socket", "http"]).optional().default("socket"),
+  mode: z.enum(["socket", "http", "polling"]).optional().default("socket"),
   signingSecret: z.string().optional(),
   webhookPath: z.string().optional().default("/slack/events"),
   accounts: z.record(z.string(), SlackAccountSchema.optional()).optional(),
