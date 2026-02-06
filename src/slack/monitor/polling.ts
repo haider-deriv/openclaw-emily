@@ -89,6 +89,131 @@ function containsMention(text: string, userId: string): boolean {
 }
 
 /**
+ * Process a single message (used by both channel and thread polling)
+ */
+async function processMessage(
+  msg: {
+    ts?: string;
+    user?: string;
+    text?: string;
+    subtype?: string;
+    bot_id?: string;
+    thread_ts?: string;
+  },
+  channelId: string,
+  channelType: "im" | "mpim" | "channel" | "group",
+  myUserId: string,
+  handleSlackMessage: SlackMessageHandler,
+  isDirectMessage: boolean,
+): Promise<void> {
+  const ts = msg.ts;
+  const userId = msg.user;
+  const text = msg.text;
+  const subtype = msg.subtype;
+
+  // Skip if already processed
+  if (!ts || processedMessages.has(ts)) {
+    return;
+  }
+
+  // Skip own messages
+  if (userId === myUserId) {
+    processedMessages.add(ts);
+    return;
+  }
+
+  // Skip bot messages
+  if (msg.bot_id || subtype === "bot_message") {
+    processedMessages.add(ts);
+    return;
+  }
+
+  // Skip empty or subtyped messages (joins, leaves, etc.)
+  if (!text || !text.trim() || subtype) {
+    processedMessages.add(ts);
+    return;
+  }
+
+  // Skip messages from before startup (prevents re-processing on restart)
+  const messageTime = parseFloat(ts);
+  if (messageTime < startupTimestamp) {
+    processedMessages.add(ts);
+    return;
+  }
+
+  // For channels (not DMs), require @mention
+  if (!isDirectMessage && !containsMention(text, myUserId)) {
+    processedMessages.add(ts);
+    return;
+  }
+
+  // Mark as processed before handling
+  processedMessages.add(ts);
+
+  // Convert to SlackMessageEvent format
+  const slackEvent: SlackMessageEvent = {
+    type: "message",
+    channel: channelId,
+    user: userId || "",
+    text: text,
+    ts: ts,
+    event_ts: ts,
+    channel_type: channelType,
+    // Include thread_ts if it's a threaded reply
+    ...(msg.thread_ts && msg.thread_ts !== ts ? { thread_ts: msg.thread_ts } : {}),
+  };
+
+  // Handle the message using existing handler
+  try {
+    await handleSlackMessage(slackEvent, { source: "message" });
+  } catch (err) {
+    console.error(`Error handling message in ${channelId}:`, err);
+  }
+}
+
+/**
+ * Poll a thread for new replies
+ */
+async function pollThread(
+  client: WebClient,
+  channelId: string,
+  threadTs: string,
+  channelType: "im" | "mpim" | "channel" | "group",
+  myUserId: string,
+  handleSlackMessage: SlackMessageHandler,
+  isDirectMessage: boolean,
+): Promise<void> {
+  try {
+    const response = await client.conversations.replies({
+      channel: channelId,
+      ts: threadTs,
+      limit: 10,
+    });
+
+    if (!response.ok || !response.messages) {
+      return;
+    }
+
+    // Skip first message (it's the parent, already processed)
+    for (const msg of response.messages.slice(1)) {
+      await processMessage(
+        msg,
+        channelId,
+        channelType,
+        myUserId,
+        handleSlackMessage,
+        isDirectMessage,
+      );
+    }
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (!errorMessage.includes("ratelimited")) {
+      console.error(`Error polling thread ${threadTs} in ${channelId}:`, err);
+    }
+  }
+}
+
+/**
  * Poll a single channel for new messages
  */
 async function pollChannel(
@@ -103,77 +228,51 @@ async function pollChannel(
   try {
     const response = await client.conversations.history({
       channel: channelId,
-      limit: 5,
+      limit: 10,
     });
 
     if (!response.ok || !response.messages) {
       return;
     }
 
+    // Collect threads that have recent activity
+    const activeThreads: string[] = [];
+
     for (const msg of response.messages) {
-      const ts = msg.ts;
-      const userId = msg.user;
-      const text = msg.text;
-      const subtype = msg.subtype;
+      // Check if this message is a thread parent with replies
+      const replyCount = (msg as { reply_count?: number }).reply_count ?? 0;
+      const latestReply = (msg as { latest_reply?: string }).latest_reply;
 
-      // Skip if already processed
-      if (!ts || processedMessages.has(ts)) {
-        continue;
+      if (replyCount > 0 && msg.ts) {
+        // Check if thread has activity after startup
+        const latestReplyTime = latestReply ? parseFloat(latestReply) : 0;
+        if (latestReplyTime >= startupTimestamp) {
+          activeThreads.push(msg.ts);
+        }
       }
 
-      // Skip own messages
-      if (userId === myUserId) {
-        processedMessages.add(ts);
-        continue;
-      }
+      // Process top-level message
+      await processMessage(
+        msg,
+        channelId,
+        channelType,
+        myUserId,
+        handleSlackMessage,
+        isDirectMessage,
+      );
+    }
 
-      // Skip bot messages
-      if (msg.bot_id || subtype === "bot_message") {
-        processedMessages.add(ts);
-        continue;
-      }
-
-      // Skip empty or subtyped messages (joins, leaves, etc.)
-      if (!text || !text.trim() || subtype) {
-        processedMessages.add(ts);
-        continue;
-      }
-
-      // Skip messages from before startup (prevents re-processing on restart)
-      const messageTime = parseFloat(ts);
-      if (messageTime < startupTimestamp) {
-        processedMessages.add(ts);
-        continue;
-      }
-
-      // For channels (not DMs), require @mention
-      if (!isDirectMessage && !containsMention(text, myUserId)) {
-        processedMessages.add(ts);
-        continue;
-      }
-
-      // Mark as processed before handling
-      processedMessages.add(ts);
-
-      // Convert to SlackMessageEvent format
-      const slackEvent: SlackMessageEvent = {
-        type: "message",
-        channel: channelId,
-        user: userId || "",
-        text: text,
-        ts: ts,
-        event_ts: ts,
-        channel_type: channelType,
-        // Include thread_ts if it's a threaded reply
-        ...(msg.thread_ts && msg.thread_ts !== ts ? { thread_ts: msg.thread_ts } : {}),
-      };
-
-      // Handle the message using existing handler
-      try {
-        await handleSlackMessage(slackEvent, { source: "message" });
-      } catch (err) {
-        console.error(`Error handling message in ${channelId}:`, err);
-      }
+    // Poll active threads for new replies
+    for (const threadTs of activeThreads) {
+      await pollThread(
+        client,
+        channelId,
+        threadTs,
+        channelType,
+        myUserId,
+        handleSlackMessage,
+        isDirectMessage,
+      );
     }
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
