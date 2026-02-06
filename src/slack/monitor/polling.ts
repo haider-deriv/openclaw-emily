@@ -22,11 +22,14 @@ type ChannelInfo = {
   type: "im" | "mpim" | "channel" | "group";
 };
 
-// Track processed messages to avoid duplicates
+// Track processed messages to avoid duplicates within a session
 const processedMessages = new Set<string>();
 
 // Track discovered channels
 const discoveredChannels = new Map<string, ChannelInfo>();
+
+// Startup timestamp - only process messages newer than this
+let startupTimestamp: number = 0;
 
 /**
  * Get all channels the user is a member of (DMs, group DMs, and channels)
@@ -136,10 +139,9 @@ async function pollChannel(
         continue;
       }
 
-      // Skip old messages (older than 24 hours)
+      // Skip messages from before startup (prevents re-processing on restart)
       const messageTime = parseFloat(ts);
-      const ageHours = (Date.now() / 1000 - messageTime) / 3600;
-      if (ageHours > 24) {
+      if (messageTime < startupTimestamp) {
         processedMessages.add(ts);
         continue;
       }
@@ -191,6 +193,9 @@ async function pollingLoop(config: PollingConfig): Promise<void> {
   const { ctx, handleSlackMessage, userToken, myUserId, pollInterval, abortSignal } = config;
 
   const client = new WebClient(userToken);
+
+  // Set startup timestamp - only process messages after this time
+  startupTimestamp = Date.now() / 1000;
 
   ctx.runtime.log?.(`slack polling mode started (interval: ${pollInterval}s, user: ${myUserId})`);
 
