@@ -88,6 +88,116 @@ async function promptChannelMode(runtime: RuntimeEnv): Promise<ChannelsWizardMod
   ) as ChannelsWizardMode;
 }
 
+async function promptLinkedInToolsConfig(
+  nextConfig: OpenClawConfig,
+  runtime: RuntimeEnv,
+): Promise<OpenClawConfig> {
+  const existingLinkedIn = nextConfig.tools?.linkedin;
+  const hasBaseUrl = Boolean(existingLinkedIn?.baseUrl);
+  const hasApiKey = Boolean(existingLinkedIn?.apiKey);
+  const hasAccountId = Boolean(existingLinkedIn?.accountId);
+  const isConfigured = hasBaseUrl && hasApiKey && hasAccountId;
+
+  note(
+    [
+      "LinkedIn talent search lets your agent find candidates on LinkedIn using the Unipile API.",
+      "You'll need a Unipile account with LinkedIn integration.",
+      "Required: baseUrl (Unipile DSN), apiKey (Unipile API key), accountId (LinkedIn account ID on Unipile).",
+      "Docs: https://docs.openclaw.ai/tools/linkedin",
+    ].join("\n"),
+    "LinkedIn talent search",
+  );
+
+  const enableLinkedIn = guardCancel(
+    await confirm({
+      message: "Enable LinkedIn talent search?",
+      initialValue: existingLinkedIn?.enabled ?? isConfigured,
+    }),
+    runtime,
+  );
+
+  if (!enableLinkedIn) {
+    return {
+      ...nextConfig,
+      tools: {
+        ...nextConfig.tools,
+        linkedin: {
+          ...existingLinkedIn,
+          enabled: false,
+        },
+      },
+    };
+  }
+
+  // Base URL
+  const baseUrlInput = guardCancel(
+    await text({
+      message: hasBaseUrl
+        ? "Unipile base URL (leave blank to keep current)"
+        : "Unipile base URL (e.g., api1.unipile.com:13111)",
+      placeholder: hasBaseUrl ? "Leave blank to keep current" : "api1.unipile.com:13111",
+    }),
+    runtime,
+  );
+  const baseUrl = String(baseUrlInput ?? "").trim() || existingLinkedIn?.baseUrl;
+
+  // API Key
+  const apiKeyInput = guardCancel(
+    await text({
+      message: hasApiKey
+        ? "Unipile API key (leave blank to keep current or use UNIPILE_API_KEY env)"
+        : "Unipile API key (or leave blank to use UNIPILE_API_KEY env)",
+      placeholder: hasApiKey ? "Leave blank to keep current" : "Your Unipile API key",
+    }),
+    runtime,
+  );
+  const apiKey = String(apiKeyInput ?? "").trim() || existingLinkedIn?.apiKey;
+
+  // Account ID
+  const accountIdInput = guardCancel(
+    await text({
+      message: hasAccountId
+        ? "LinkedIn account ID on Unipile (leave blank to keep current or use UNIPILE_ACCOUNT_ID env)"
+        : "LinkedIn account ID on Unipile (or leave blank to use UNIPILE_ACCOUNT_ID env)",
+      placeholder: hasAccountId ? "Leave blank to keep current" : "Your LinkedIn account ID",
+    }),
+    runtime,
+  );
+  const accountId = String(accountIdInput ?? "").trim() || existingLinkedIn?.accountId;
+
+  const newConfig: typeof existingLinkedIn = {
+    enabled: true,
+  };
+
+  if (baseUrl) {
+    newConfig.baseUrl = baseUrl;
+  }
+  if (apiKey) {
+    newConfig.apiKey = apiKey;
+  }
+  if (accountId) {
+    newConfig.accountId = accountId;
+  }
+
+  if (!newConfig.baseUrl || !newConfig.apiKey || !newConfig.accountId) {
+    note(
+      [
+        "Some credentials are missing. LinkedIn talent search will be unavailable until all are set.",
+        "You can also set UNIPILE_BASE_URL, UNIPILE_API_KEY, and UNIPILE_ACCOUNT_ID env vars.",
+      ].join("\n"),
+      "LinkedIn configuration incomplete",
+    );
+  }
+
+  return {
+    ...nextConfig,
+    tools: {
+      ...nextConfig.tools,
+      linkedin: newConfig,
+    },
+  };
+}
+
 async function promptWebToolsConfig(
   nextConfig: OpenClawConfig,
   runtime: RuntimeEnv,
@@ -322,6 +432,10 @@ export async function runConfigureWizard(
         nextConfig = await promptWebToolsConfig(nextConfig, runtime);
       }
 
+      if (selected.includes("linkedin")) {
+        nextConfig = await promptLinkedInToolsConfig(nextConfig, runtime);
+      }
+
       if (selected.includes("gateway")) {
         const gateway = await promptGatewayConfig(nextConfig, runtime);
         nextConfig = gateway.config;
@@ -441,6 +555,11 @@ export async function runConfigureWizard(
 
         if (choice === "web") {
           nextConfig = await promptWebToolsConfig(nextConfig, runtime);
+          await persistConfig();
+        }
+
+        if (choice === "linkedin") {
+          nextConfig = await promptLinkedInToolsConfig(nextConfig, runtime);
           await persistConfig();
         }
 

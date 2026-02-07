@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from "../config/config.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import type { AnyAgentTool } from "./tools/common.js";
+import { createLinkedInTalentSearchTool } from "../linkedin/tool.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
@@ -147,6 +148,14 @@ export function createOpenClawTools(options?: {
     ...(webFetchTool ? [webFetchTool] : []),
     ...(imageTool ? [imageTool] : []),
   ];
+
+  // LinkedIn talent search tool
+  const linkedInTool = createLinkedInTalentSearchTool({
+    config: options?.config,
+  });
+  if (linkedInTool) {
+    tools.push(linkedInTool);
+  }
 
   const pluginTools = resolvePluginTools({
     context: {

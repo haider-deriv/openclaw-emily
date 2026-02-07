@@ -449,4 +449,17 @@ export type ToolsConfig = {
       deny?: string[];
     };
   };
+  /** LinkedIn talent search tool configuration. */
+  linkedin?: {
+    /** Enable LinkedIn talent search tool (default: true when credentials are present). */
+    enabled?: boolean;
+    /** Unipile DSN base URL (e.g., "api1.unipile.com:13111"). */
+    baseUrl?: string;
+    /** Unipile API key for authentication. */
+    apiKey?: string;
+    /** LinkedIn account ID on Unipile platform. */
+    accountId?: string;
+    /** Request timeout in milliseconds. Default: 30000. */
+    timeoutMs?: number;
+  };
 };
