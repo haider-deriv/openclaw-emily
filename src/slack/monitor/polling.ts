@@ -4,7 +4,7 @@
  */
 
 import { WebClient } from "@slack/web-api";
-import type { SlackMessageEvent } from "../types.js";
+import type { SlackFile, SlackMessageEvent } from "../types.js";
 import type { SlackMonitorContext } from "./context.js";
 import type { SlackMessageHandler } from "./message-handler.js";
 
@@ -99,6 +99,7 @@ async function processMessage(
     subtype?: string;
     bot_id?: string;
     thread_ts?: string;
+    files?: SlackFile[];
   },
   channelId: string,
   channelType: "im" | "mpim" | "channel" | "group",
@@ -161,6 +162,8 @@ async function processMessage(
     channel_type: channelType,
     // Include thread_ts if it's a threaded reply
     ...(msg.thread_ts && msg.thread_ts !== ts ? { thread_ts: msg.thread_ts } : {}),
+    // Include files for media handling
+    ...(msg.files && msg.files.length > 0 ? { files: msg.files } : {}),
   };
 
   // Handle the message using existing handler
@@ -303,7 +306,9 @@ async function pollingLoop(config: PollingConfig): Promise<void> {
       const channels = await getAllChannels(client);
 
       for (const channelInfo of channels) {
-        if (abortSignal?.aborted) break;
+        if (abortSignal?.aborted) {
+          break;
+        }
         await pollChannel(client, channelInfo, myUserId, handleSlackMessage);
       }
     } catch (err) {
