@@ -164,6 +164,17 @@ const TOOL_SECTIONS = [
     label: "Media",
     tools: [{ id: "image", label: "image", description: "Image understanding" }],
   },
+  {
+    id: "integrations",
+    label: "Integrations",
+    tools: [
+      {
+        id: "linkedin_talent_search",
+        label: "linkedin_talent_search",
+        description: "Search LinkedIn candidates",
+      },
+    ],
+  },
 ];
 
 const PROFILE_OPTIONS = [
