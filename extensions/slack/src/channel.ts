@@ -41,7 +41,14 @@ function getTokenForOperation(
 ): string | undefined {
   const userToken = account.config.userToken?.trim() || undefined;
   const botToken = account.botToken?.trim();
-  const allowUserWrites = account.config.userTokenReadOnly === false;
+  const isPollingMode = account.mode === "polling";
+  const allowUserWrites = account.config.userTokenReadOnly === false || isPollingMode;
+
+  // In polling mode, always prefer userToken (there's no botToken)
+  if (isPollingMode) {
+    return userToken ?? botToken;
+  }
+
   if (operation === "read") {
     return userToken ?? botToken;
   }
@@ -116,15 +123,28 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
         accountId,
         clearBaseFields: ["botToken", "appToken", "name"],
       }),
-    isConfigured: (account) => Boolean(account.botToken && account.appToken),
-    describeAccount: (account) => ({
-      accountId: account.accountId,
-      name: account.name,
-      enabled: account.enabled,
-      configured: Boolean(account.botToken && account.appToken),
-      botTokenSource: account.botTokenSource,
-      appTokenSource: account.appTokenSource,
-    }),
+    isConfigured: (account) => {
+      if (account.mode === "polling") {
+        return Boolean(account.userToken && account.config.myUserId);
+      }
+      return Boolean(account.botToken && account.appToken);
+    },
+    describeAccount: (account) => {
+      const isPolling = account.mode === "polling";
+      const configured = isPolling
+        ? Boolean(account.userToken && account.config.myUserId)
+        : Boolean(account.botToken && account.appToken);
+      return {
+        accountId: account.accountId,
+        name: account.name,
+        enabled: account.enabled,
+        configured,
+        botTokenSource: account.botTokenSource,
+        appTokenSource: account.appTokenSource,
+        userTokenSource: account.userTokenSource,
+        mode: account.mode,
+      };
+    },
     resolveAllowFrom: ({ cfg, accountId }) =>
       (resolveSlackAccount({ cfg, accountId }).dm?.allowFrom ?? []).map((entry) => String(entry)),
     formatAllowFrom: ({ allowFrom }) =>
@@ -234,9 +254,12 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
   },
   actions: {
     listActions: ({ cfg }) => {
-      const accounts = listEnabledSlackAccounts(cfg).filter(
-        (account) => account.botTokenSource !== "none",
-      );
+      const accounts = listEnabledSlackAccounts(cfg).filter((account) => {
+        if (account.mode === "polling") {
+          return account.userTokenSource !== "none";
+        }
+        return account.botTokenSource !== "none";
+      });
       if (accounts.length === 0) {
         return [];
       }
@@ -558,14 +581,18 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
       lastProbeAt: snapshot.lastProbeAt ?? null,
     }),
     probeAccount: async ({ account, timeoutMs }) => {
-      const token = account.botToken?.trim();
+      const token =
+        account.mode === "polling" ? account.userToken?.trim() : account.botToken?.trim();
       if (!token) {
         return { ok: false, error: "missing token" };
       }
       return await getSlackRuntime().channel.slack.probeSlack(token, timeoutMs);
     },
     buildAccountSnapshot: ({ account, runtime, probe }) => {
-      const configured = Boolean(account.botToken && account.appToken);
+      const isPolling = account.mode === "polling";
+      const configured = isPolling
+        ? Boolean(account.userToken && account.config.myUserId)
+        : Boolean(account.botToken && account.appToken);
       return {
         accountId: account.accountId,
         name: account.name,
@@ -573,6 +600,8 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
         configured,
         botTokenSource: account.botTokenSource,
         appTokenSource: account.appTokenSource,
+        userTokenSource: account.userTokenSource,
+        mode: account.mode,
         running: runtime?.running ?? false,
         lastStartAt: runtime?.lastStartAt ?? null,
         lastStopAt: runtime?.lastStopAt ?? null,

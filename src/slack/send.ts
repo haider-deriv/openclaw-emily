@@ -1,5 +1,5 @@
 import { type FilesUploadV2Arguments, type WebClient } from "@slack/web-api";
-import type { SlackTokenSource } from "./accounts.js";
+import type { ResolvedSlackAccount, SlackTokenSource } from "./accounts.js";
 import {
   chunkMarkdownTextWithMode,
   resolveChunkMode,
@@ -13,7 +13,7 @@ import { resolveSlackAccount } from "./accounts.js";
 import { createSlackWebClient } from "./client.js";
 import { markdownToSlackMrkdwnChunks } from "./format.js";
 import { parseSlackTarget } from "./targets.js";
-import { resolveSlackBotToken } from "./token.js";
+import { resolveSlackBotToken, resolveSlackUserToken } from "./token.js";
 
 const SLACK_TEXT_LIMIT = 4000;
 
@@ -45,20 +45,34 @@ function resolveToken(params: {
   accountId: string;
   fallbackToken?: string;
   fallbackSource?: SlackTokenSource;
+  account?: ResolvedSlackAccount;
 }) {
   const explicit = resolveSlackBotToken(params.explicit);
   if (explicit) {
     return explicit;
   }
+
+  // In polling mode, prefer user token for sending messages
+  if (params.account?.mode === "polling") {
+    const userToken = resolveSlackUserToken(params.account.userToken);
+    if (userToken) {
+      return userToken;
+    }
+    // Fall through to bot token if user token not available
+  }
+
   const fallback = resolveSlackBotToken(params.fallbackToken);
   if (!fallback) {
+    const tokenType = params.account?.mode === "polling" ? "user or bot" : "bot";
     logVerbose(
-      `slack send: missing bot token for account=${params.accountId} explicit=${Boolean(
+      `slack send: missing ${tokenType} token for account=${params.accountId} explicit=${Boolean(
         params.explicit,
       )} source=${params.fallbackSource ?? "unknown"}`,
     );
     throw new Error(
-      `Slack bot token missing for account "${params.accountId}" (set channels.slack.accounts.${params.accountId}.botToken or SLACK_BOT_TOKEN for default).`,
+      params.account?.mode === "polling"
+        ? `Slack user/bot token missing for account "${params.accountId}" in polling mode (set channels.slack.accounts.${params.accountId}.userToken/botToken or SLACK_USER_TOKEN/SLACK_BOT_TOKEN for default).`
+        : `Slack bot token missing for account "${params.accountId}" (set channels.slack.accounts.${params.accountId}.botToken or SLACK_BOT_TOKEN for default).`,
     );
   }
   return fallback;
@@ -143,6 +157,7 @@ export async function sendMessageSlack(
     accountId: account.accountId,
     fallbackToken: account.botToken,
     fallbackSource: account.botTokenSource,
+    account,
   });
   const client = opts.client ?? createSlackWebClient(token);
   const recipient = parseRecipient(to);

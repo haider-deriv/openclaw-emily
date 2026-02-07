@@ -4,7 +4,7 @@ import { logVerbose } from "../globals.js";
 import { resolveSlackAccount } from "./accounts.js";
 import { createSlackWebClient } from "./client.js";
 import { sendMessageSlack } from "./send.js";
-import { resolveSlackBotToken } from "./token.js";
+import { resolveSlackBotToken, resolveSlackUserToken } from "./token.js";
 
 export type SlackActionClientOpts = {
   accountId?: string;
@@ -34,14 +34,29 @@ export type SlackPin = {
 function resolveToken(explicit?: string, accountId?: string) {
   const cfg = loadConfig();
   const account = resolveSlackAccount({ cfg, accountId });
+
+  // In polling mode, prefer user token for actions (edit, delete, send, etc.)
+  if (account.mode === "polling") {
+    const userToken = resolveSlackUserToken(explicit ?? account.userToken ?? undefined);
+    if (userToken) {
+      return userToken;
+    }
+    // Fall through to bot token if user token not available
+  }
+
   const token = resolveSlackBotToken(explicit ?? account.botToken ?? undefined);
   if (!token) {
+    const tokenType = account.mode === "polling" ? "user or bot" : "bot";
     logVerbose(
-      `slack actions: missing bot token for account=${account.accountId} explicit=${Boolean(
+      `slack actions: missing ${tokenType} token for account=${account.accountId} explicit=${Boolean(
         explicit,
       )} source=${account.botTokenSource ?? "unknown"}`,
     );
-    throw new Error("SLACK_BOT_TOKEN or channels.slack.botToken is required for Slack actions");
+    throw new Error(
+      account.mode === "polling"
+        ? "SLACK_USER_TOKEN/SLACK_BOT_TOKEN or channels.slack.userToken/botToken is required for Slack actions in polling mode"
+        : "SLACK_BOT_TOKEN or channels.slack.botToken is required for Slack actions",
+    );
   }
   return token;
 }

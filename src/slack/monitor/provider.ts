@@ -14,12 +14,13 @@ import { resolveSlackWebClientOptions } from "../client.js";
 import { normalizeSlackWebhookPath, registerSlackHttpHandler } from "../http/index.js";
 import { resolveSlackChannelAllowlist } from "../resolve-channels.js";
 import { resolveSlackUserAllowlist } from "../resolve-users.js";
-import { resolveSlackAppToken, resolveSlackBotToken } from "../token.js";
+import { resolveSlackAppToken, resolveSlackBotToken, resolveSlackUserToken } from "../token.js";
 import { normalizeAllowList } from "./allow-list.js";
 import { resolveSlackSlashCommandConfig } from "./commands.js";
 import { createSlackMonitorContext } from "./context.js";
 import { registerSlackMonitorEvents } from "./events.js";
 import { createSlackMessageHandler } from "./message-handler.js";
+import { startPollingLoop } from "./polling.js";
 import { registerSlackMonitorSlashCommands } from "./slash.js";
 
 const slackBoltModule = SlackBolt as typeof import("@slack/bolt") & {
@@ -63,7 +64,24 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
   const signingSecret = account.config.signingSecret?.trim();
   const botToken = resolveSlackBotToken(opts.botToken ?? account.botToken);
   const appToken = resolveSlackAppToken(opts.appToken ?? account.appToken);
-  if (!botToken || (slackMode !== "http" && !appToken)) {
+  const userToken = resolveSlackUserToken(account.config.userToken);
+  const pollInterval = account.config.pollInterval ?? 300; // default 5 minutes
+  const myUserId = account.config.myUserId?.trim();
+
+  // Validate tokens based on mode
+  if (slackMode === "polling") {
+    // Polling mode only needs user token
+    if (!userToken) {
+      throw new Error(
+        `Slack user token missing for polling mode in account "${account.accountId}" (set channels.slack.accounts.${account.accountId}.userToken or channels.slack.userToken).`,
+      );
+    }
+    if (!myUserId) {
+      throw new Error(
+        `Slack myUserId missing for polling mode in account "${account.accountId}" (set channels.slack.accounts.${account.accountId}.myUserId to your Slack user ID).`,
+      );
+    }
+  } else if (!botToken || (slackMode !== "http" && !appToken)) {
     const missing =
       slackMode === "http"
         ? `Slack bot token missing for account "${account.accountId}" (set channels.slack.accounts.${account.accountId}.botToken or SLACK_BOT_TOKEN for default).`
@@ -129,20 +147,30 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
         })
       : null;
   const clientOptions = resolveSlackWebClientOptions();
-  const app = new App(
-    slackMode === "socket"
-      ? {
-          token: botToken,
-          appToken,
-          socketMode: true,
+
+  // For polling mode, we create a minimal app just for the context structure
+  // but don't use Slack Bolt's event system
+  const app =
+    slackMode === "polling"
+      ? new App({
+          token: userToken!, // Use user token for API calls (validated above)
+          signingSecret: "not-used-in-polling-mode",
           clientOptions,
-        }
-      : {
-          token: botToken,
-          receiver: receiver ?? undefined,
-          clientOptions,
-        },
-  );
+        })
+      : new App(
+          slackMode === "socket"
+            ? {
+                token: botToken,
+                appToken,
+                socketMode: true,
+                clientOptions,
+              }
+            : {
+                token: botToken,
+                receiver: receiver ?? undefined,
+                clientOptions,
+              },
+        );
   const slackHttpHandler =
     slackMode === "http" && receiver
       ? async (req: IncomingMessage, res: ServerResponse) => {
@@ -173,7 +201,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
   const ctx = createSlackMonitorContext({
     cfg,
     accountId: account.accountId,
-    botToken,
+    botToken: slackMode === "polling" ? userToken! : botToken!,
     app,
     runtime,
     botUserId,
@@ -205,8 +233,11 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
 
   const handleSlackMessage = createSlackMessageHandler({ ctx, account });
 
-  registerSlackMonitorEvents({ ctx, account, handleSlackMessage });
-  registerSlackMonitorSlashCommands({ ctx, account });
+  // Skip event registration for polling mode - we use polling instead of Slack Bolt events
+  if (slackMode !== "polling") {
+    registerSlackMonitorEvents({ ctx, account, handleSlackMessage });
+    registerSlackMonitorSlashCommands({ ctx, account });
+  }
   if (slackMode === "http" && slackHttpHandler) {
     unregisterHttpHandler = registerSlackHttpHandler({
       path: slackWebhookPath,
@@ -358,7 +389,18 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
   opts.abortSignal?.addEventListener("abort", stopOnAbort, { once: true });
 
   try {
-    if (slackMode === "socket") {
+    if (slackMode === "polling") {
+      // Start polling loop for user token mode
+      startPollingLoop({
+        ctx,
+        handleSlackMessage,
+        userToken: userToken!,
+        myUserId: myUserId!,
+        pollInterval,
+        abortSignal: opts.abortSignal,
+      });
+      runtime.log?.(`slack polling mode started (interval: ${pollInterval}s)`);
+    } else if (slackMode === "socket") {
       await app.start();
       runtime.log?.("slack socket mode connected");
     } else {
@@ -375,6 +417,8 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
   } finally {
     opts.abortSignal?.removeEventListener("abort", stopOnAbort);
     unregisterHttpHandler?.();
-    await app.stop().catch(() => undefined);
+    if (slackMode !== "polling") {
+      await app.stop().catch(() => undefined);
+    }
   }
 }

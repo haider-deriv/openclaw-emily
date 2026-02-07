@@ -71,11 +71,11 @@ const CHAT_CHANNEL_META: Record<ChatChannelId, ChannelMeta> = {
   slack: {
     id: "slack",
     label: "Slack",
-    selectionLabel: "Slack (Socket Mode)",
-    detailLabel: "Slack Bot",
+    selectionLabel: "Slack (Bot or User)",
+    detailLabel: "Slack",
     docsPath: "/channels/slack",
     docsLabel: "slack",
-    blurb: "supported (Socket Mode).",
+    blurb: "Socket Mode (bot) or Polling (user token).",
     systemImage: "number",
   },
   signal: {

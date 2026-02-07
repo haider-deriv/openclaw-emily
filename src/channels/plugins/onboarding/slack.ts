@@ -325,6 +325,10 @@ export const slackOnboardingAdapter: ChannelOnboardingAdapter = {
   getStatus: async ({ cfg }) => {
     const configured = listSlackAccountIds(cfg).some((accountId) => {
       const account = resolveSlackAccount({ cfg, accountId });
+      const mode = account.config.mode ?? "socket";
+      if (mode === "polling") {
+        return Boolean(account.config.userToken && account.config.myUserId);
+      }
       return Boolean(account.botToken && account.appToken);
     });
     return {
@@ -355,6 +359,145 @@ export const slackOnboardingAdapter: ChannelOnboardingAdapter = {
       cfg: next,
       accountId: slackAccountId,
     });
+
+    // Ask for mode first
+    const currentMode = resolvedAccount.config.mode ?? "socket";
+    const modeChoice = await prompter.select({
+      message: "Slack connection mode",
+      options: [
+        {
+          value: "socket",
+          label: "Bot (Socket Mode)",
+          hint: "Creates a bot app - messages show bot badge",
+        },
+        {
+          value: "polling",
+          label: "User (Polling)",
+          hint: "Uses your account - messages appear as you",
+        },
+      ],
+      initialValue: currentMode,
+    });
+    const slackMode = String(modeChoice) as "socket" | "polling";
+
+    if (slackMode === "polling") {
+      // User/Polling mode - needs user token and myUserId
+      await prompter.note(
+        [
+          "Polling mode lets OpenClaw send/receive messages as YOU (not a bot).",
+          "",
+          "To get your user token:",
+          "1) Go to api.slack.com/apps → Create App → From scratch",
+          "2) OAuth & Permissions → User Token Scopes → Add:",
+          "   - channels:history, channels:read, chat:write",
+          "   - groups:history, im:history, mpim:history, users:read",
+          "3) Install to Workspace → Copy 'User OAuth Token' (xoxp-...)",
+          "",
+          "To get your User ID:",
+          "1) In Slack, click your profile picture → Profile",
+          "2) Click ⋮ (more) → Copy member ID (starts with U)",
+          "",
+          `Docs: ${formatDocsLink("/slack", "slack")}`,
+        ].join("\n"),
+        "Slack user token setup",
+      );
+
+      const hasUserToken = Boolean(resolvedAccount.config.userToken);
+      const hasMyUserId = Boolean(resolvedAccount.config.myUserId);
+
+      let userToken: string | null = null;
+      let myUserId: string | null = null;
+
+      if (hasUserToken && hasMyUserId) {
+        const keep = await prompter.confirm({
+          message: "User token already configured. Keep it?",
+          initialValue: true,
+        });
+        if (!keep) {
+          userToken = String(
+            await prompter.text({
+              message: "Enter Slack user token (xoxp-...)",
+              validate: (value) => (value?.trim() ? undefined : "Required"),
+            }),
+          ).trim();
+          myUserId = String(
+            await prompter.text({
+              message: "Enter your Slack user ID (U...)",
+              validate: (value) => (value?.trim() ? undefined : "Required"),
+            }),
+          ).trim();
+        }
+      } else {
+        userToken = String(
+          await prompter.text({
+            message: "Enter Slack user token (xoxp-...)",
+            validate: (value) => (value?.trim() ? undefined : "Required"),
+          }),
+        ).trim();
+        myUserId = String(
+          await prompter.text({
+            message: "Enter your Slack user ID (U...)",
+            validate: (value) => (value?.trim() ? undefined : "Required"),
+          }),
+        ).trim();
+      }
+
+      const pollInterval = Number(
+        await prompter.text({
+          message: "Poll interval in seconds",
+          initialValue: "300",
+          validate: (value) => {
+            const num = Number(value);
+            return num > 0 ? undefined : "Must be a positive number";
+          },
+        }),
+      );
+
+      if (userToken && myUserId) {
+        if (slackAccountId === DEFAULT_ACCOUNT_ID) {
+          next = {
+            ...next,
+            channels: {
+              ...next.channels,
+              slack: {
+                ...next.channels?.slack,
+                enabled: true,
+                mode: "polling",
+                userToken,
+                myUserId,
+                pollInterval,
+              },
+            },
+          };
+        } else {
+          next = {
+            ...next,
+            channels: {
+              ...next.channels,
+              slack: {
+                ...next.channels?.slack,
+                enabled: true,
+                accounts: {
+                  ...next.channels?.slack?.accounts,
+                  [slackAccountId]: {
+                    ...next.channels?.slack?.accounts?.[slackAccountId],
+                    enabled: next.channels?.slack?.accounts?.[slackAccountId]?.enabled ?? true,
+                    mode: "polling",
+                    userToken,
+                    myUserId,
+                    pollInterval,
+                  },
+                },
+              },
+            },
+          };
+        }
+      }
+
+      return { cfg: next, accountId: slackAccountId };
+    }
+
+    // Bot/Socket mode - existing flow
     const accountConfigured = Boolean(resolvedAccount.botToken && resolvedAccount.appToken);
     const allowEnv = slackAccountId === DEFAULT_ACCOUNT_ID;
     const canUseEnv =
@@ -386,7 +529,7 @@ export const slackOnboardingAdapter: ChannelOnboardingAdapter = {
           ...next,
           channels: {
             ...next.channels,
-            slack: { ...next.channels?.slack, enabled: true },
+            slack: { ...next.channels?.slack, enabled: true, mode: "socket" },
           },
         };
       } else {
@@ -446,6 +589,7 @@ export const slackOnboardingAdapter: ChannelOnboardingAdapter = {
             slack: {
               ...next.channels?.slack,
               enabled: true,
+              mode: "socket",
               botToken,
               appToken,
             },
@@ -464,6 +608,7 @@ export const slackOnboardingAdapter: ChannelOnboardingAdapter = {
                 [slackAccountId]: {
                   ...next.channels?.slack?.accounts?.[slackAccountId],
                   enabled: next.channels?.slack?.accounts?.[slackAccountId]?.enabled ?? true,
+                  mode: "socket",
                   botToken,
                   appToken,
                 },

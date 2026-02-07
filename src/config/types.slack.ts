@@ -78,10 +78,14 @@ export type SlackThreadConfig = {
 export type SlackAccountConfig = {
   /** Optional display name for this account (used in CLI/UI lists). */
   name?: string;
-  /** Slack connection mode (socket|http). Default: socket. */
-  mode?: "socket" | "http";
+  /** Slack connection mode (socket|http|polling). Default: socket. Polling mode uses user token to receive messages as a user (not bot). */
+  mode?: "socket" | "http" | "polling";
   /** Slack signing secret (required for HTTP mode). */
   signingSecret?: string;
+  /** Poll interval in seconds for polling mode. Default: 300 (5 minutes). */
+  pollInterval?: number;
+  /** Your Slack user ID (required for polling mode to filter out own messages). */
+  myUserId?: string;
   /** Slack Events API webhook path (default: /slack/events). */
   webhookPath?: string;
   /** Optional provider capability tags used for agent/runtime guidance. */
