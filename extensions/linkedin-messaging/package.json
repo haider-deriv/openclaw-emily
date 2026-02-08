@@ -1,7 +1,7 @@
 {
-  "name": "@openclaw/linkedin-messaging",
+  "name": "@openclaw/linkedin",
   "version": "2026.2.6-3",
-  "description": "OpenClaw LinkedIn messaging channel plugin",
+  "description": "OpenClaw LinkedIn channel plugin",
   "type": "module",
   "devDependencies": {
     "openclaw": "workspace:*"
