@@ -288,6 +288,11 @@ export async function processLinkedInMessage(
 
   // Dispatch to auto-reply system
   console.log("[LINKEDIN] Dispatching to auto-reply system...");
+  console.log("[LINKEDIN] config is:", config ? "defined" : "UNDEFINED!");
+  console.log("[LINKEDIN] config type:", typeof config);
+  if (config) {
+    console.log("[LINKEDIN] config.session:", config.session);
+  }
   try {
     await dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
