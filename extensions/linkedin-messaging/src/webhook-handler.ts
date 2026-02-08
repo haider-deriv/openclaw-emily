@@ -126,8 +126,11 @@ export function startLinkedInWebhookHandler(
     accountId: account.accountId,
     log: (msg) => runtime.logging?.logVerbose?.(msg),
     handler: async (req: IncomingMessage, res: ServerResponse) => {
+      console.log(`[LINKEDIN] Webhook hit: ${req.method} ${req.url}`);
+
       // Handle GET requests for webhook verification
       if (req.method === "GET") {
+        console.log("[LINKEDIN] GET request - returning OK");
         res.statusCode = 200;
         res.setHeader("Content-Type", "text/plain");
         res.end("OK");
@@ -136,6 +139,7 @@ export function startLinkedInWebhookHandler(
 
       // Only accept POST requests
       if (req.method !== "POST") {
+        console.log(`[LINKEDIN] Rejecting method: ${req.method}`);
         res.statusCode = 405;
         res.setHeader("Allow", "GET, POST");
         res.setHeader("Content-Type", "application/json");
@@ -145,10 +149,13 @@ export function startLinkedInWebhookHandler(
 
       try {
         const rawBody = await readRequestBody(req);
+        console.log(`[LINKEDIN] Raw webhook body:`, rawBody.slice(0, 500));
+
         const signature = req.headers["x-webhook-secret"] as string | undefined;
 
         // Validate signature if secret is configured
         if (!validateWebhookSignature(rawBody, signature, account.webhookSecret)) {
+          console.log("[LINKEDIN] Signature validation FAILED");
           runtime.logging?.logVerbose?.("linkedin: webhook signature validation failed");
           res.statusCode = 401;
           res.setHeader("Content-Type", "application/json");
@@ -158,6 +165,7 @@ export function startLinkedInWebhookHandler(
 
         // Parse the webhook body
         const payload = JSON.parse(rawBody) as LinkedInWebhookPayload;
+        console.log(`[LINKEDIN] Parsed payload:`, JSON.stringify(payload, null, 2));
 
         // Record inbound activity
         recordChannelRuntimeState({
@@ -174,17 +182,26 @@ export function startLinkedInWebhookHandler(
         res.end(JSON.stringify({ status: "ok" }));
 
         // Log the incoming message
+        console.log(
+          `[LINKEDIN] Message from: ${payload.sender?.name ?? payload.sender?.id ?? "unknown"}`,
+        );
         runtime.logging?.logVerbose?.(
           `linkedin: received message from ${payload.sender?.name ?? payload.sender?.id ?? "unknown"}`,
         );
 
         // Process the message asynchronously
         if (onMessage) {
+          console.log("[LINKEDIN] Calling onMessage handler...");
           await onMessage(payload).catch((err) => {
+            console.error(`[LINKEDIN] onMessage error:`, err);
             runtime.logging?.error?.(`linkedin webhook handler failed: ${String(err)}`);
           });
+          console.log("[LINKEDIN] onMessage handler completed");
+        } else {
+          console.log("[LINKEDIN] WARNING: No onMessage handler!");
         }
       } catch (err) {
+        console.error(`[LINKEDIN] Webhook error:`, err);
         runtime.logging?.error?.(`linkedin webhook error: ${String(err)}`);
         if (!res.headersSent) {
           res.statusCode = 500;
@@ -232,10 +249,12 @@ export async function processLinkedInMessage(
   account: ResolvedLinkedInAccount,
   config: OpenClawConfig,
 ): Promise<void> {
+  console.log("[LINKEDIN] processLinkedInMessage called");
   const runtime = getLinkedInRuntime();
 
   // Skip if it's our own message
   if (payload.is_sender) {
+    console.log("[LINKEDIN] Skipping own message (is_sender=true)");
     runtime.logging?.logVerbose?.("linkedin: skipping own message");
     return;
   }
@@ -261,25 +280,32 @@ export async function processLinkedInMessage(
     SenderName: payload.sender?.name,
   };
 
+  console.log("[LINKEDIN] Built MsgContext:", JSON.stringify(ctxPayload, null, 2));
+
   runtime.logging?.logVerbose?.(
     `linkedin: message from ${ctxPayload.SenderName ?? ctxPayload.From}: ${(ctxPayload.Body ?? "").slice(0, 100)}`,
   );
 
   // Dispatch to auto-reply system
+  console.log("[LINKEDIN] Dispatching to auto-reply system...");
   try {
     await dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: config,
       dispatcherOptions: {
         deliver: async (replyPayload: ReplyPayload) => {
+          console.log("[LINKEDIN] deliver() called with:", JSON.stringify(replyPayload, null, 2));
           const text = replyPayload.text;
           if (!text) {
+            console.log("[LINKEDIN] No text in reply payload, skipping");
             return;
           }
 
+          console.log(`[LINKEDIN] Sending reply to chat ${payload.chat_id}: ${text.slice(0, 100)}`);
           // Send reply to the same chat
           await sendMessage(clientOpts, payload.chat_id, { text });
 
+          console.log("[LINKEDIN] Reply sent successfully!");
           runtime.logging?.logVerbose?.(
             `linkedin: sent reply to ${payload.chat_id}: ${text.slice(0, 100)}`,
           );
@@ -294,11 +320,14 @@ export async function processLinkedInMessage(
           });
         },
         onError: (err, info) => {
+          console.error(`[LINKEDIN] Reply error (${info.kind}):`, err);
           runtime.logging?.error?.(`linkedin ${info.kind} reply failed: ${String(err)}`);
         },
       },
     });
+    console.log("[LINKEDIN] dispatchReplyWithBufferedBlockDispatcher completed");
   } catch (err) {
+    console.error("[LINKEDIN] Auto-reply dispatch failed:", err);
     runtime.logging?.error?.(`linkedin: auto-reply dispatch failed: ${String(err)}`);
   }
 }

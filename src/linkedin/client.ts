@@ -347,13 +347,15 @@ export async function startChat(
  */
 export async function createWebhook(
   opts: LinkedInClientOptions,
-  request: Omit<LinkedInCreateWebhookRequest, "source" | "account_ids">,
+  request: Omit<LinkedInCreateWebhookRequest, "source" | "account_ids" | "enabled" | "events">,
 ): Promise<LinkedInCreateWebhookResponse> {
   const path = `/api/v1/webhooks`;
   return linkedInRequest<LinkedInCreateWebhookResponse>("POST", path, opts, {
     ...request,
     source: "messaging",
     account_ids: [opts.accountId],
+    enabled: true,
+    events: ["message_received"],
   });
 }
 
@@ -388,9 +390,7 @@ export async function deleteWebhook(opts: LinkedInClientOptions, webhookId: stri
  * List all webhooks for the account.
  * GET /api/v1/webhooks
  */
-export async function listWebhooks(
-  opts: LinkedInClientOptions,
-): Promise<{
+export async function listWebhooks(opts: LinkedInClientOptions): Promise<{
   object: "WebhookList";
   items: Array<{ id: string; name?: string; request_url: string; enabled: boolean }>;
 }> {

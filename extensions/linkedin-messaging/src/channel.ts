@@ -388,7 +388,8 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
       // Register webhook with Unipile if webhookBaseUrl is configured
       if (account.webhookBaseUrl) {
         try {
-          const { createWebhook, listWebhooks } = await import("../../../src/linkedin/client.js");
+          const { createWebhook, listWebhooks, deleteWebhook } =
+            await import("../../../src/linkedin/client.js");
           const clientOpts = {
             baseUrl: account.baseUrl,
             apiKey: account.apiKey,
@@ -405,13 +406,29 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
           );
 
           if (existingWebhook) {
-            ctx.log?.info(`[${account.accountId}] webhook already registered: ${fullWebhookUrl}`);
+            // Check if it's enabled - if not, delete and recreate
+            if (existingWebhook.enabled) {
+              ctx.log?.info(
+                `[${account.accountId}] webhook already registered and enabled: ${fullWebhookUrl}`,
+              );
+            } else {
+              ctx.log?.info(
+                `[${account.accountId}] webhook exists but disabled, recreating: ${fullWebhookUrl}`,
+              );
+              await deleteWebhook(clientOpts, existingWebhook.id);
+              const result = await createWebhook(clientOpts, {
+                request_url: fullWebhookUrl,
+                name: `openclaw-linkedin-${account.accountId}`,
+              });
+              ctx.log?.info(
+                `[${account.accountId}] recreated webhook: ${fullWebhookUrl} (id: ${result.webhook_id})`,
+              );
+            }
           } else {
             // Register new webhook
             const result = await createWebhook(clientOpts, {
               request_url: fullWebhookUrl,
               name: `openclaw-linkedin-${account.accountId}`,
-              ...(account.webhookSecret ? { secret: account.webhookSecret } : {}),
             });
             ctx.log?.info(
               `[${account.accountId}] registered webhook with Unipile: ${fullWebhookUrl} (id: ${result.webhook_id})`,
