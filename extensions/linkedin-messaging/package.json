@@ -9,6 +9,16 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "channel": {
+      "id": "linkedin",
+      "label": "LinkedIn",
+      "selectionLabel": "LinkedIn (Unipile API)",
+      "docsPath": "/channels/linkedin",
+      "docsLabel": "linkedin",
+      "blurb": "LinkedIn messaging via Unipile API integration.",
+      "order": 15,
+      "quickstartAllowFrom": true
+    }
   }
 }
