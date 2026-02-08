@@ -104,6 +104,7 @@ export {
   TelegramConfigSchema,
 } from "../config/zod-schema.providers-core.js";
 export { WhatsAppConfigSchema } from "../config/zod-schema.providers-whatsapp.js";
+export { LinkedInChannelConfigSchema } from "../config/zod-schema.providers-linkedin.js";
 export {
   BlockStreamingCoalesceSchema,
   DmConfigSchema,

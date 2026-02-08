@@ -13,6 +13,8 @@ import {
   formatPairingApproveHint,
   missingTargetError,
   linkedinOnboardingAdapter,
+  buildChannelConfigSchema,
+  LinkedInChannelConfigSchema,
 } from "openclaw/plugin-sdk";
 import { getLinkedInRuntime } from "./runtime.js";
 
@@ -134,6 +136,7 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
     reactions: false,
     media: true,
   },
+  configSchema: buildChannelConfigSchema(LinkedInChannelConfigSchema),
   reload: { configPrefixes: ["channels.linkedin", "tools.linkedin"], noopPrefixes: [] },
   config: {
     listAccountIds: (_cfg) => [DEFAULT_ACCOUNT_ID],
