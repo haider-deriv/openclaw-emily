@@ -374,6 +374,29 @@ const DOCKS: Record<ChatChannelId, ChannelDock> = {
       },
     },
   },
+  linkedin: {
+    id: "linkedin",
+    capabilities: {
+      chatTypes: ["direct"],
+      media: true,
+    },
+    outbound: { textChunkLimit: 4000 },
+    config: {
+      resolveAllowFrom: ({ cfg }) => {
+        const allowFrom = cfg.channels?.linkedin?.allowFrom ?? [];
+        return allowFrom.map((entry) => String(entry));
+      },
+      formatAllowFrom: ({ allowFrom }) =>
+        allowFrom.map((entry) => String(entry).trim()).filter(Boolean),
+    },
+    threading: {
+      buildToolContext: ({ context, hasRepliedRef }) => ({
+        currentChannelId: context.To?.trim() || undefined,
+        currentThreadTs: context.ReplyToId,
+        hasRepliedRef,
+      }),
+    },
+  },
 };
 
 function buildDockFromPlugin(plugin: ChannelPlugin): ChannelDock {
