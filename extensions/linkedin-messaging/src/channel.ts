@@ -31,6 +31,7 @@ export type ResolvedLinkedInAccount = {
   allowFrom: string[];
   webhookSecret?: string;
   webhookPath?: string;
+  webhookBaseUrl?: string;
 };
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -84,6 +85,7 @@ function resolveLinkedInAccount(
     allowFrom,
     webhookSecret: channelCfg?.webhookSecret,
     webhookPath: channelCfg?.webhookPath,
+    webhookBaseUrl: channelCfg?.webhookBaseUrl,
   };
 }
 
@@ -382,6 +384,50 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
       });
 
       ctx.log?.info(`[${account.accountId}] webhook handler registered at ${webhookHandler.path}`);
+
+      // Register webhook with Unipile if webhookBaseUrl is configured
+      if (account.webhookBaseUrl) {
+        try {
+          const { createWebhook, listWebhooks } = await import("../../../src/linkedin/client.js");
+          const clientOpts = {
+            baseUrl: account.baseUrl,
+            apiKey: account.apiKey,
+            accountId: account.unipileAccountId,
+            timeoutMs: account.timeoutMs,
+          };
+
+          const fullWebhookUrl = `${account.webhookBaseUrl.replace(/\/+$/, "")}${webhookHandler.path}`;
+
+          // Check if webhook already exists
+          const existingWebhooks = await listWebhooks(clientOpts);
+          const existingWebhook = existingWebhooks.items?.find(
+            (w) => w.request_url === fullWebhookUrl,
+          );
+
+          if (existingWebhook) {
+            ctx.log?.info(`[${account.accountId}] webhook already registered: ${fullWebhookUrl}`);
+          } else {
+            // Register new webhook
+            const result = await createWebhook(clientOpts, {
+              request_url: fullWebhookUrl,
+              name: `openclaw-linkedin-${account.accountId}`,
+              ...(account.webhookSecret ? { secret: account.webhookSecret } : {}),
+            });
+            ctx.log?.info(
+              `[${account.accountId}] registered webhook with Unipile: ${fullWebhookUrl} (id: ${result.webhook_id})`,
+            );
+          }
+        } catch (err) {
+          ctx.log?.warn?.(
+            `[${account.accountId}] failed to register webhook with Unipile: ${String(err)}`,
+          );
+        }
+      } else {
+        ctx.log?.warn?.(
+          `[${account.accountId}] webhookBaseUrl not configured - messages won't be received. ` +
+            `Set channels.linkedin.webhookBaseUrl to your public URL (e.g., ngrok URL)`,
+        );
+      }
 
       ctx.setStatus({
         accountId: ctx.accountId,

@@ -44,6 +44,8 @@ export const LinkedInChannelAccountSchemaBase = z.object({
   webhookSecret: z.string().optional(),
   /** Custom webhook path (default: /linkedin/webhook). */
   webhookPath: z.string().optional(),
+  /** Public base URL for webhooks (e.g., "https://your-domain.com" or ngrok URL). Required for receiving messages. */
+  webhookBaseUrl: z.string().optional(),
   /** History limit for message retrieval. */
   historyLimit: z.number().int().min(0).optional(),
 });
