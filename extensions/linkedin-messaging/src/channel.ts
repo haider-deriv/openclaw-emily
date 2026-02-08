@@ -369,6 +369,7 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
   gateway: {
     startAccount: async (ctx: ChannelGatewayContext<ResolvedLinkedInAccount>) => {
       const account = ctx.account;
+      const config = ctx.cfg; // NOTE: It's ctx.cfg, not ctx.config!
       ctx.log?.info(`[${account.accountId}] starting LinkedIn messaging provider`);
 
       const { startLinkedInWebhookHandler, processLinkedInMessage } =
@@ -376,10 +377,10 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
 
       const webhookHandler = startLinkedInWebhookHandler({
         account,
-        config: ctx.config,
+        config,
         abortSignal: ctx.abortSignal,
         onMessage: async (payload) => {
-          await processLinkedInMessage(payload, account, ctx.config);
+          await processLinkedInMessage(payload, account, config);
         },
       });
 
