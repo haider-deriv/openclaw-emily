@@ -129,8 +129,10 @@ async function processMessage(
     return false;
   }
 
-  // Skip if no text content
-  if (!msg.text?.trim()) {
+  // Skip if no text content AND no attachments
+  const hasText = Boolean(msg.text?.trim());
+  const hasAttachments = msg.attachments && msg.attachments.length > 0;
+  if (!hasText && !hasAttachments) {
     return false;
   }
 
@@ -151,6 +153,7 @@ async function processMessage(
     is_sender: false,
     is_group: false, // Could determine from chat type if needed
     provider_message_id: msg.provider_id,
+    attachments: msg.attachments, // Include attachments for media support
   };
 
   try {

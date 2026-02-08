@@ -400,3 +400,114 @@ export async function listWebhooks(opts: LinkedInClientOptions): Promise<{
     items: Array<{ id: string; name?: string; request_url: string; enabled: boolean }>;
   }>("GET", path, opts);
 }
+
+/**
+ * Send a message with attachment(s) using multipart/form-data.
+ * POST /api/v1/chats/{chat_id}/messages
+ */
+export async function sendMessageWithAttachment(
+  opts: LinkedInClientOptions,
+  chatId: string,
+  request: {
+    text?: string;
+    attachments?: Array<{ filename: string; content: ArrayBuffer; contentType: string }>;
+  },
+): Promise<LinkedInSendMessageResponse> {
+  const baseUrl = normalizeBaseUrl(opts.baseUrl);
+  const url = `${baseUrl}/api/v1/chats/${encodeURIComponent(chatId)}/messages`;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const fetchImpl = resolveFetch();
+
+  if (!fetchImpl) {
+    throw new Error("fetch is not available");
+  }
+
+  // Build FormData
+  const formData = new FormData();
+
+  if (request.text) {
+    formData.append("text", request.text);
+  }
+
+  formData.append("account_id", opts.accountId);
+
+  if (request.attachments) {
+    for (const attachment of request.attachments) {
+      const blob = new Blob([new Uint8Array(attachment.content)], { type: attachment.contentType });
+      formData.append("attachments", blob, attachment.filename);
+    }
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        "X-API-KEY": opts.apiKey,
+        Accept: "application/json",
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errorMsg = await parseErrorResponse(res);
+      throw new Error(`LinkedIn API error (${res.status}): ${errorMsg}`);
+    }
+
+    const text = await res.text();
+    if (!text) {
+      return {} as LinkedInSendMessageResponse;
+    }
+
+    return JSON.parse(text) as LinkedInSendMessageResponse;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Download an attachment from a message.
+ * GET /api/v1/messages/{message_id}/attachments/{attachment_id}
+ */
+export async function downloadAttachment(
+  opts: LinkedInClientOptions,
+  messageId: string,
+  attachmentId: string,
+): Promise<{ content: ArrayBuffer; contentType: string }> {
+  const baseUrl = normalizeBaseUrl(opts.baseUrl);
+  const url = `${baseUrl}/api/v1/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const fetchImpl = resolveFetch();
+
+  if (!fetchImpl) {
+    throw new Error("fetch is not available");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetchImpl(url, {
+      method: "GET",
+      headers: {
+        "X-API-KEY": opts.apiKey,
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errorMsg = await parseErrorResponse(res);
+      throw new Error(`LinkedIn API error (${res.status}): ${errorMsg}`);
+    }
+
+    const contentType = res.headers.get("content-type") || "application/octet-stream";
+    const content = await res.arrayBuffer();
+
+    return { content, contentType };
+  } finally {
+    clearTimeout(timer);
+  }
+}

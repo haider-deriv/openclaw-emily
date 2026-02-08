@@ -267,9 +267,28 @@ export async function processLinkedInMessage(
     timeoutMs: account.timeoutMs,
   };
 
+  // Build message body with attachment info
+  let messageBody = payload.message ?? "";
+  if (payload.attachments && payload.attachments.length > 0) {
+    const attachmentDescriptions = payload.attachments.map((att) => {
+      if (att.type === "img") return `[Image attachment${att.url ? `: ${att.url}` : ""}]`;
+      if (att.type === "video") return `[Video attachment${att.url ? `: ${att.url}` : ""}]`;
+      if (att.type === "audio") return `[Audio attachment${att.url ? `: ${att.url}` : ""}]`;
+      if (att.type === "file")
+        return `[File: ${(att as { file_name: string }).file_name}${att.url ? ` - ${att.url}` : ""}]`;
+      if (att.type === "linkedin_post") return `[LinkedIn Post${att.url ? `: ${att.url}` : ""}]`;
+      return `[Attachment: ${att.type}]`;
+    });
+    if (messageBody) {
+      messageBody += "\n\n" + attachmentDescriptions.join("\n");
+    } else {
+      messageBody = attachmentDescriptions.join("\n");
+    }
+  }
+
   // Build context payload for the auto-reply system (MsgContext format)
   const ctxPayload: MsgContext = {
-    Body: payload.message ?? "",
+    Body: messageBody,
     From: payload.sender?.id ?? "",
     To: account.unipileAccountId,
     SessionKey: `linkedin:${payload.chat_id}`,
