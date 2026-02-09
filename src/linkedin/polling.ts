@@ -6,7 +6,12 @@
  */
 
 import type { OpenClawConfig } from "../config/config.js";
-import type { LinkedInClientOptions, LinkedInMessage, LinkedInWebhookPayload } from "./types.js";
+import type {
+  LinkedInChat,
+  LinkedInClientOptions,
+  LinkedInMessage,
+  LinkedInWebhookPayload,
+} from "./types.js";
 import { listChats, getMessages, getChatAttendees } from "./client.js";
 
 export interface LinkedInPollingConfig {
@@ -30,13 +35,14 @@ const attendeeCache = new Map<string, Map<string, string>>();
 
 /**
  * Resolve sender name by looking up chat attendees.
+ * Falls back to chat name (which contains the contact name for direct messages).
  * Caches results to avoid repeated API calls.
- * Tries to match using sender_attendee_id first, then sender_id.
  */
 async function resolveSenderName(
   chatId: string,
   senderAttendeeId: string,
   senderId: string,
+  chatName: string | null | undefined,
   clientOpts: LinkedInClientOptions,
   log?: (msg: string) => void,
 ): Promise<string | undefined> {
@@ -74,12 +80,27 @@ async function resolveSenderName(
     );
 
     // Try to find the sender name using either ID
-    const name = newCache.get(senderAttendeeId) ?? newCache.get(senderId);
+    let name = newCache.get(senderAttendeeId) ?? newCache.get(senderId);
+
+    // Fallback to chat name (for direct chats, this is the contact's name)
+    if (!name && chatName) {
+      log?.(`[LINKEDIN POLLING] Using chat name as fallback: ${chatName}`);
+      name = chatName;
+      // Cache this for future lookups
+      newCache.set(senderAttendeeId, chatName);
+      newCache.set(senderId, chatName);
+    }
+
     log?.(`[LINKEDIN POLLING] Resolved sender name: ${name ?? "NOT FOUND"}`);
 
     return name;
   } catch (err) {
     log?.(`[LINKEDIN POLLING] Failed to fetch attendees for chat ${chatId}: ${String(err)}`);
+    // Even on error, try using chat name as fallback
+    if (chatName) {
+      log?.(`[LINKEDIN POLLING] Using chat name as fallback after error: ${chatName}`);
+      return chatName;
+    }
     return undefined;
   }
 }
@@ -136,7 +157,7 @@ async function pollingLoop(config: LinkedInPollingConfig): Promise<void> {
         });
 
         for (const msg of messagesResponse.items) {
-          const wasNew = await processMessage(msg, chat.id, config);
+          const wasNew = await processMessage(msg, chat, config);
           if (wasNew) {
             newMessageCount++;
           }
@@ -175,11 +196,12 @@ async function pollingLoop(config: LinkedInPollingConfig): Promise<void> {
  */
 async function processMessage(
   msg: LinkedInMessage,
-  chatId: string,
+  chat: LinkedInChat,
   config: LinkedInPollingConfig,
 ): Promise<boolean> {
   const { clientOpts, accountId, onMessage, log } = config;
   const processed = processedMessages.get(accountId)!;
+  const chatId = chat.id;
 
   // Skip if already processed
   if (processed.has(msg.id)) {
@@ -203,12 +225,14 @@ async function processMessage(
   log?.(
     `[LINKEDIN POLLING] Message sender_id=${msg.sender_id}, sender_attendee_id=${msg.sender_attendee_id}`,
   );
+  log?.(`[LINKEDIN POLLING] Chat name: ${chat.name ?? "null"}, type: ${chat.type}`);
 
-  // Resolve sender name from chat attendees (try both sender_attendee_id and sender_id)
+  // Resolve sender name from chat attendees, with chat.name as fallback for direct chats
   const senderName = await resolveSenderName(
     chatId,
     msg.sender_attendee_id,
     msg.sender_id,
+    chat.name,
     clientOpts,
     log,
   );
@@ -226,7 +250,7 @@ async function processMessage(
       name: senderName,
     },
     is_sender: false,
-    is_group: false, // Could determine from chat type if needed
+    is_group: chat.type !== 0, // type 0 = direct, 1 = group, 2 = channel
     provider_message_id: msg.provider_id,
     attachments: msg.attachments, // Include attachments for media support
   };
