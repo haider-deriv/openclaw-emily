@@ -290,16 +290,42 @@ export async function processLinkedInMessage(
   const senderName = payload.sender?.name;
   const senderId = payload.sender?.id ?? "";
   const chatType = payload.is_group ? "group" : "direct";
+  const isDirectMessage = !payload.is_group;
+
+  // Build envelope "from" label (like Slack's envelopeFrom)
+  const envelopeFrom =
+    runtime.channel?.conversation?.resolveConversationLabel?.({
+      ChatType: chatType,
+      SenderName: senderName,
+      From: `linkedin:${senderId}`,
+    }) ?? (isDirectMessage ? senderName : `linkedin:${payload.chat_id}`);
+
+  // Append message ID to body (like Slack does)
+  const textWithId = `${messageBody}\n[linkedin message id: ${payload.message_id} chat: ${payload.chat_id}]`;
+
+  // Get timestamp for envelope
+  const messageTimestamp = payload.timestamp ? new Date(payload.timestamp).getTime() : undefined;
+
+  // Get previous timestamp for elapsed time calculation
+  const storePath = runtime.channel?.session?.resolveStorePath?.(config.session?.store, {
+    agentId: undefined, // Will use default agent
+  });
+  const sessionKey = `linkedin:${payload.chat_id}`;
+  const previousTimestamp = storePath
+    ? runtime.channel?.session?.readSessionUpdatedAt?.({ storePath, sessionKey })
+    : undefined;
 
   // Use plugin runtime to format the inbound envelope with sender context
   const envelopeOptions = runtime.channel?.reply?.resolveEnvelopeFormatOptions?.(config);
   const formattedBody =
     runtime.channel?.reply?.formatInboundEnvelope?.({
       channel: "LinkedIn",
-      from: senderName ?? senderId,
-      body: messageBody,
+      from: envelopeFrom ?? senderName ?? senderId,
+      timestamp: messageTimestamp,
+      body: textWithId,
       chatType,
       sender: { name: senderName, id: senderId },
+      previousTimestamp,
       envelope: envelopeOptions,
     }) ?? messageBody;
 
