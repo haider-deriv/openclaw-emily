@@ -286,17 +286,34 @@ export async function processLinkedInMessage(
     }
   }
 
+  // Format message body with sender info (like Slack does)
+  const senderName = payload.sender?.name;
+  const senderId = payload.sender?.id ?? "";
+  const chatType = payload.is_group ? "group" : "direct";
+
+  // Use plugin runtime to format the inbound envelope with sender context
+  const envelopeOptions = runtime.channel?.reply?.resolveEnvelopeFormatOptions?.(config);
+  const formattedBody =
+    runtime.channel?.reply?.formatInboundEnvelope?.({
+      channel: "LinkedIn",
+      from: senderName ?? senderId,
+      body: messageBody,
+      chatType,
+      sender: { name: senderName, id: senderId },
+      envelope: envelopeOptions,
+    }) ?? messageBody;
+
   // Build context payload for the auto-reply system (MsgContext format)
   const ctxPayload: MsgContext = {
-    Body: messageBody,
-    From: payload.sender?.id ?? "",
+    Body: formattedBody,
+    From: senderId,
     To: account.unipileAccountId,
     SessionKey: `linkedin:${payload.chat_id}`,
     AccountId: account.accountId,
     MessageSid: payload.message_id,
     ReplyToId: payload.chat_id,
-    ChatType: payload.is_group ? "group" : "direct",
-    SenderName: payload.sender?.name,
+    ChatType: chatType,
+    SenderName: senderName,
   };
 
   console.log("[LINKEDIN] Built MsgContext:", JSON.stringify(ctxPayload, null, 2));
