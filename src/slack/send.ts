@@ -12,6 +12,7 @@ import { loadWebMedia } from "../web/media.js";
 import { resolveSlackAccount } from "./accounts.js";
 import { createSlackWebClient } from "./client.js";
 import { markdownToSlackMrkdwnChunks } from "./format.js";
+import { resolveSlackTarget } from "./resolve-target.js";
 import { parseSlackTarget } from "./targets.js";
 import { resolveSlackBotToken, resolveSlackUserToken } from "./token.js";
 
@@ -78,12 +79,26 @@ function resolveToken(params: {
   return fallback;
 }
 
-function parseRecipient(raw: string): SlackRecipient {
-  const target = parseSlackTarget(raw);
-  if (!target) {
-    throw new Error("Recipient is required for Slack sends");
+/**
+ * Resolve a recipient by ID, email, username, display name, or channel name.
+ * First tries sync parsing for ID patterns, then falls back to async API resolution.
+ */
+async function resolveRecipient(raw: string, client: WebClient): Promise<SlackRecipient> {
+  // First try sync parsing with non-strict mode (won't throw on non-ID patterns)
+  const syncTarget = parseSlackTarget(raw, { strict: false });
+  if (syncTarget) {
+    return { kind: syncTarget.kind, id: syncTarget.id };
   }
-  return { kind: target.kind, id: target.id };
+
+  // Fall back to async resolution via Slack API
+  const resolved = await resolveSlackTarget({ input: raw, client });
+  if (!resolved) {
+    throw new Error(
+      `Could not find Slack user or channel "${raw}". ` +
+        "Try using an ID (user:U123 or channel:C123) or verify the name/email exists.",
+    );
+  }
+  return { kind: resolved.kind, id: resolved.id };
 }
 
 async function resolveChannelId(
@@ -160,7 +175,7 @@ export async function sendMessageSlack(
     account,
   });
   const client = opts.client ?? createSlackWebClient(token);
-  const recipient = parseRecipient(to);
+  const recipient = await resolveRecipient(to, client);
   const { channelId } = await resolveChannelId(client, recipient);
   const textLimit = resolveTextChunkLimit(cfg, "slack", account.accountId);
   const chunkLimit = Math.min(textLimit, SLACK_TEXT_LIMIT);

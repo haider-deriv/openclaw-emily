@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import type { WebClient } from "@slack/web-api";
 import type { OpenClawConfig } from "../../config/config.js";
 import { resolveSlackAccount } from "../../slack/accounts.js";
 import {
@@ -16,7 +17,10 @@ import {
   sendSlackMessage,
   unpinSlackMessage,
 } from "../../slack/actions.js";
-import { parseSlackTarget, resolveSlackChannelId } from "../../slack/targets.js";
+import { createSlackWebClient } from "../../slack/client.js";
+import { resolveSlackChannelTarget, resolveSlackUserTarget } from "../../slack/resolve-target.js";
+import { parseSlackTarget } from "../../slack/targets.js";
+import { resolveSlackBotToken, resolveSlackUserToken } from "../../slack/token.js";
 import { withNormalizedTimestamp } from "../date-time.js";
 import { createActionGate, jsonResult, readReactionParams, readStringParam } from "./common.js";
 
@@ -24,6 +28,40 @@ const messagingActions = new Set(["sendMessage", "editMessage", "deleteMessage",
 
 const reactionsActions = new Set(["react", "reactions"]);
 const pinActions = new Set(["pinMessage", "unpinMessage", "listPins"]);
+
+/**
+ * Resolve a channel ID from user input, supporting both IDs and channel names.
+ */
+async function resolveChannelIdAsync(input: string, client: WebClient): Promise<string> {
+  const resolved = await resolveSlackChannelTarget({ input, client });
+  if (!resolved) {
+    throw new Error(
+      `Could not find Slack channel "${input}". ` +
+        "Try using a channel ID (channel:C123) or verify the channel name exists.",
+    );
+  }
+  if (resolved.kind !== "channel") {
+    throw new Error(
+      `"${input}" resolved to a user, but a channel was expected. ` +
+        "Use channel:C123 or #channel-name for channels.",
+    );
+  }
+  return resolved.id;
+}
+
+/**
+ * Resolve a user ID from user input, supporting IDs, emails, usernames, and display names.
+ */
+async function resolveUserIdAsync(input: string, client: WebClient): Promise<string> {
+  const resolved = await resolveSlackUserTarget({ input, client });
+  if (!resolved) {
+    throw new Error(
+      `Could not find Slack user "${input}". ` +
+        "Try using a user ID (user:U123), email, username, or display name.",
+    );
+  }
+  return resolved.id;
+}
 
 export type SlackActionContext = {
   /** Current channel ID for auto-threading. */
@@ -83,12 +121,6 @@ export async function handleSlackAction(
   cfg: OpenClawConfig,
   context?: SlackActionContext,
 ): Promise<AgentToolResult<unknown>> {
-  const resolveChannelId = () =>
-    resolveSlackChannelId(
-      readStringParam(params, "channelId", {
-        required: true,
-      }),
-    );
   const action = readStringParam(params, "action", { required: true });
   const accountId = readStringParam(params, "accountId");
   const account = resolveSlackAccount({ cfg, accountId });
@@ -124,11 +156,35 @@ export async function handleSlackAction(
   const readOpts = buildActionOpts("read");
   const writeOpts = buildActionOpts("write");
 
+  // Create a Slack client for resolution operations
+  const resolveReadToken = () => {
+    const token = resolveSlackUserToken(userToken) ?? resolveSlackBotToken(botToken);
+    if (!token) {
+      throw new Error("No Slack token available for resolution");
+    }
+    return token;
+  };
+
+  // Lazy client creation for resolution (only created if needed)
+  let _resolutionClient: WebClient | undefined;
+  const getResolutionClient = () => {
+    if (!_resolutionClient) {
+      _resolutionClient = createSlackWebClient(resolveReadToken());
+    }
+    return _resolutionClient;
+  };
+
+  // Async channel ID resolution with human-friendly identifier support
+  const resolveChannelId = async () => {
+    const input = readStringParam(params, "channelId", { required: true });
+    return resolveChannelIdAsync(input, getResolutionClient());
+  };
+
   if (reactionsActions.has(action)) {
     if (!isActionEnabled("reactions")) {
       throw new Error("Slack reactions are disabled.");
     }
-    const channelId = resolveChannelId();
+    const channelId = await resolveChannelId();
     const messageId = readStringParam(params, "messageId", { required: true });
     if (action === "react") {
       const { emoji, remove, isEmpty } = readReactionParams(params, {
@@ -194,7 +250,7 @@ export async function handleSlackAction(
         return jsonResult({ ok: true, result });
       }
       case "editMessage": {
-        const channelId = resolveChannelId();
+        const channelId = await resolveChannelId();
         const messageId = readStringParam(params, "messageId", {
           required: true,
         });
@@ -209,7 +265,7 @@ export async function handleSlackAction(
         return jsonResult({ ok: true });
       }
       case "deleteMessage": {
-        const channelId = resolveChannelId();
+        const channelId = await resolveChannelId();
         const messageId = readStringParam(params, "messageId", {
           required: true,
         });
@@ -221,7 +277,7 @@ export async function handleSlackAction(
         return jsonResult({ ok: true });
       }
       case "readMessages": {
-        const channelId = resolveChannelId();
+        const channelId = await resolveChannelId();
         const limitRaw = params.limit;
         const limit =
           typeof limitRaw === "number" && Number.isFinite(limitRaw) ? limitRaw : undefined;
@@ -252,7 +308,7 @@ export async function handleSlackAction(
     if (!isActionEnabled("pins")) {
       throw new Error("Slack pins are disabled.");
     }
-    const channelId = resolveChannelId();
+    const channelId = await resolveChannelId();
     if (action === "pinMessage") {
       const messageId = readStringParam(params, "messageId", {
         required: true,
@@ -294,7 +350,9 @@ export async function handleSlackAction(
     if (!isActionEnabled("memberInfo")) {
       throw new Error("Slack member info is disabled.");
     }
-    const userId = readStringParam(params, "userId", { required: true });
+    const userInput = readStringParam(params, "userId", { required: true });
+    // Resolve user by ID, email, username, or display name
+    const userId = await resolveUserIdAsync(userInput, getResolutionClient());
     const info = writeOpts
       ? await getSlackMemberInfo(userId, readOpts)
       : await getSlackMemberInfo(userId);

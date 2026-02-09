@@ -7,7 +7,6 @@ import type {
 import { createActionGate, readNumberParam, readStringParam } from "../../agents/tools/common.js";
 import { handleSlackAction, type SlackActionContext } from "../../agents/tools/slack-actions.js";
 import { listEnabledSlackAccounts } from "../../slack/accounts.js";
-import { resolveSlackChannelId } from "../../slack/targets.js";
 
 export function createSlackActions(providerId: string): ChannelMessageActionAdapter {
   return {
@@ -72,10 +71,9 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
       const { action, params, cfg } = ctx;
       const accountId = ctx.accountId ?? undefined;
       const toolContext = ctx.toolContext as SlackActionContext | undefined;
-      const resolveChannelId = () =>
-        resolveSlackChannelId(
-          readStringParam(params, "channelId") ?? readStringParam(params, "to", { required: true }),
-        );
+      // Get the raw channel identifier - async resolution happens in handleSlackAction
+      const getChannelId = () =>
+        readStringParam(params, "channelId") ?? readStringParam(params, "to", { required: true });
 
       if (action === "send") {
         const to = readStringParam(params, "to", { required: true });
@@ -109,7 +107,7 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
         return await handleSlackAction(
           {
             action: "react",
-            channelId: resolveChannelId(),
+            channelId: getChannelId(),
             messageId,
             emoji,
             remove,
@@ -127,7 +125,7 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
         return await handleSlackAction(
           {
             action: "reactions",
-            channelId: resolveChannelId(),
+            channelId: getChannelId(),
             messageId,
             limit,
             accountId: accountId ?? undefined,
@@ -141,7 +139,7 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
         return await handleSlackAction(
           {
             action: "readMessages",
-            channelId: resolveChannelId(),
+            channelId: getChannelId(),
             limit,
             before: readStringParam(params, "before"),
             after: readStringParam(params, "after"),
@@ -160,7 +158,7 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
         return await handleSlackAction(
           {
             action: "editMessage",
-            channelId: resolveChannelId(),
+            channelId: getChannelId(),
             messageId,
             content,
             accountId: accountId ?? undefined,
@@ -176,7 +174,7 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
         return await handleSlackAction(
           {
             action: "deleteMessage",
-            channelId: resolveChannelId(),
+            channelId: getChannelId(),
             messageId,
             accountId: accountId ?? undefined,
           },
@@ -193,7 +191,7 @@ export function createSlackActions(providerId: string): ChannelMessageActionAdap
           {
             action:
               action === "pin" ? "pinMessage" : action === "unpin" ? "unpinMessage" : "listPins",
-            channelId: resolveChannelId(),
+            channelId: getChannelId(),
             messageId,
             accountId: accountId ?? undefined,
           },
