@@ -1,6 +1,7 @@
 import type { WebClient as SlackWebClient } from "@slack/web-api";
 import type { FetchLike } from "../../media/fetch.js";
 import type { SlackFile } from "../types.js";
+import { logVerbose } from "../../globals.js";
 import { fetchRemoteMedia } from "../../media/fetch.js";
 import { saveMediaBuffer } from "../../media/store.js";
 
@@ -156,8 +157,12 @@ export async function resolveSlackMedia(params: {
         contentType: saved.contentType,
         placeholder: label ? `[Slack file: ${label}]` : "[Slack file]",
       };
-    } catch {
-      // Ignore download failures and fall through to the next file.
+    } catch (err) {
+      logVerbose(
+        `slack: media download failed for file="${file.name ?? "unknown"}" ` +
+          `size=${file.size ?? "unknown"} error=${String(err)}`,
+      );
+      // Fall through to next file
     }
   }
   return null;
