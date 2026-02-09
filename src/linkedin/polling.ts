@@ -7,7 +7,7 @@
 
 import type { OpenClawConfig } from "../config/config.js";
 import type { LinkedInClientOptions, LinkedInMessage, LinkedInWebhookPayload } from "./types.js";
-import { listChats, getMessages } from "./client.js";
+import { listChats, getMessages, getChatAttendees } from "./client.js";
 
 export interface LinkedInPollingConfig {
   clientOpts: LinkedInClientOptions;
@@ -24,6 +24,47 @@ const processedMessages = new Map<string, Set<string>>();
 
 // Track startup timestamp per account
 const startupTimestamps = new Map<string, string>();
+
+// Cache chat attendees to avoid repeated API calls (chatId -> senderId -> displayName)
+const attendeeCache = new Map<string, Map<string, string>>();
+
+/**
+ * Resolve sender name by looking up chat attendees.
+ * Caches results to avoid repeated API calls.
+ */
+async function resolveSenderName(
+  chatId: string,
+  senderId: string,
+  clientOpts: LinkedInClientOptions,
+  log?: (msg: string) => void,
+): Promise<string | undefined> {
+  // Check cache first
+  const chatAttendees = attendeeCache.get(chatId);
+  if (chatAttendees?.has(senderId)) {
+    return chatAttendees.get(senderId);
+  }
+
+  try {
+    // Fetch attendees from API
+    const response = await getChatAttendees(clientOpts, chatId);
+
+    // Cache all attendees for this chat
+    const newCache = new Map<string, string>();
+    for (const attendee of response.items) {
+      if (attendee.display_name) {
+        // Map both id and provider_id to the name for flexible matching
+        newCache.set(attendee.id, attendee.display_name);
+        newCache.set(attendee.provider_id, attendee.display_name);
+      }
+    }
+    attendeeCache.set(chatId, newCache);
+
+    return newCache.get(senderId);
+  } catch (err) {
+    log?.(`[LINKEDIN POLLING] Failed to fetch attendees for chat ${chatId}: ${String(err)}`);
+    return undefined;
+  }
+}
 
 /**
  * Start the LinkedIn polling loop.
@@ -65,7 +106,9 @@ async function pollingLoop(config: LinkedInPollingConfig): Promise<void> {
       let newMessageCount = 0;
 
       for (const chat of chatsResponse.items) {
-        if (abortSignal?.aborted) break;
+        if (abortSignal?.aborted) {
+          break;
+        }
 
         // Get messages from this chat
         const startupTime = startupTimestamps.get(accountId);
@@ -76,7 +119,9 @@ async function pollingLoop(config: LinkedInPollingConfig): Promise<void> {
 
         for (const msg of messagesResponse.items) {
           const wasNew = await processMessage(msg, chat.id, config);
-          if (wasNew) newMessageCount++;
+          if (wasNew) {
+            newMessageCount++;
+          }
         }
       }
 
@@ -115,7 +160,7 @@ async function processMessage(
   chatId: string,
   config: LinkedInPollingConfig,
 ): Promise<boolean> {
-  const { accountId, onMessage, log } = config;
+  const { clientOpts, accountId, onMessage, log } = config;
   const processed = processedMessages.get(accountId)!;
 
   // Skip if already processed
@@ -136,7 +181,10 @@ async function processMessage(
     return false;
   }
 
-  log?.(`[LINKEDIN POLLING] New message in chat ${chatId}: "${msg.text.slice(0, 50)}..."`);
+  log?.(`[LINKEDIN POLLING] New message in chat ${chatId}: "${msg.text?.slice(0, 50)}..."`);
+
+  // Resolve sender name from chat attendees
+  const senderName = await resolveSenderName(chatId, msg.sender_id, clientOpts, log);
 
   // Convert to webhook payload format (for compatibility with existing handler)
   const payload: LinkedInWebhookPayload = {
@@ -148,7 +196,7 @@ async function processMessage(
     timestamp: msg.timestamp,
     sender: {
       id: msg.sender_id,
-      name: undefined, // Not available from message, would need attendees lookup
+      name: senderName,
     },
     is_sender: false,
     is_group: false, // Could determine from chat type if needed
@@ -170,6 +218,17 @@ async function processMessage(
  */
 export function clearProcessedMessages(accountId: string): void {
   processedMessages.get(accountId)?.clear();
+}
+
+/**
+ * Clear attendee cache for a chat (useful for testing or when attendees change).
+ */
+export function clearAttendeeCache(chatId?: string): void {
+  if (chatId) {
+    attendeeCache.delete(chatId);
+  } else {
+    attendeeCache.clear();
+  }
 }
 
 /**
