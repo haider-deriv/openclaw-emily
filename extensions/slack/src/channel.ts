@@ -204,8 +204,17 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
     normalizeTarget: normalizeSlackMessagingTarget,
     targetResolver: {
       looksLikeId: looksLikeSlackTargetId,
-      hint: "<channelId|user:ID|channel:ID>",
+      hint: "<channelId|user:ID|email|@username|#channel-name>",
     },
+  },
+  agentPrompt: {
+    messageToolHints: () => [
+      "Slack supports multiple ways to identify users and channels:",
+      "- Users: by ID (user:U123ABC or <@U123ABC>), email (john@company.com), username (@johndoe), or display name (@John Doe)",
+      "- Channels: by ID (channel:C123ABC or <#C123ABC>), or name (#general or general)",
+      "For the 'to' parameter in sendMessage, you can use any of these formats.",
+      "For member-info, the userId parameter also accepts email, username, or display name.",
+    ],
   },
   directory: {
     self: async () => null,
