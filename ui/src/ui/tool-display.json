@@ -231,6 +231,19 @@
         "memberInfo": { "label": "member", "detailKeys": ["userId"] },
         "emojiList": { "label": "emoji list" }
       }
+    },
+    "elevenlabs_agents": {
+      "icon": "smartphone",
+      "title": "ElevenLabs Agents",
+      "actions": {
+        "initiate_call": {
+          "label": "call",
+          "detailKeys": ["to_number", "dynamic_variables.candidate_name"]
+        },
+        "get_conversation": { "label": "get", "detailKeys": ["conversation_id"] },
+        "list_conversations": { "label": "list", "detailKeys": ["status", "limit"] },
+        "poll_until_done": { "label": "poll", "detailKeys": ["conversation_id"] }
+      }
     }
   }
 }

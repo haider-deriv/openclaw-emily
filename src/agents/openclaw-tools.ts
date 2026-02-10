@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from "../config/config.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import type { AnyAgentTool } from "./tools/common.js";
+import { createElevenLabsAgentsTool } from "../elevenlabs-agents/tool.js";
 import {
   createLinkedInTalentSearchTool,
   createLinkedInMessageConnectionTool,
@@ -165,6 +166,15 @@ export function createOpenClawTools(options?: {
   });
   if (linkedInMessageTool) {
     tools.push(linkedInMessageTool);
+  }
+
+  // ElevenLabs Agents tool
+  const elevenLabsAgentsTool = createElevenLabsAgentsTool({
+    config: options?.config,
+    workspaceDir: options?.workspaceDir,
+  });
+  if (elevenLabsAgentsTool) {
+    tools.push(elevenLabsAgentsTool);
   }
 
   const pluginTools = resolvePluginTools({
