@@ -330,16 +330,31 @@ export async function processLinkedInMessage(
     }) ?? messageBody;
 
   // Build context payload for the auto-reply system (MsgContext format)
+  // Include all fields that Slack includes so the agent knows the context
+  const linkedInFrom = isDirectMessage
+    ? `linkedin:${senderId}`
+    : `linkedin:group:${payload.chat_id}`;
+  const linkedInTo = `linkedin:${account.unipileAccountId}`;
+
   const ctxPayload: MsgContext = {
     Body: formattedBody,
-    From: senderId,
-    To: account.unipileAccountId,
-    SessionKey: `linkedin:${payload.chat_id}`,
+    RawBody: messageBody,
+    CommandBody: messageBody,
+    From: linkedInFrom,
+    To: linkedInTo,
+    SessionKey: sessionKey,
     AccountId: account.accountId,
+    ChatType: chatType,
+    ConversationLabel: envelopeFrom,
+    SenderName: senderName,
+    SenderId: senderId,
+    Provider: "linkedin" as const,
+    Surface: "linkedin" as const,
     MessageSid: payload.message_id,
     ReplyToId: payload.chat_id,
-    ChatType: chatType,
-    SenderName: senderName,
+    Timestamp: messageTimestamp,
+    OriginatingChannel: "linkedin" as const,
+    OriginatingTo: linkedInTo,
   };
 
   console.log("[LINKEDIN] Built MsgContext:", JSON.stringify(ctxPayload, null, 2));
