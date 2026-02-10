@@ -569,6 +569,18 @@ export const ToolsSchema = z
       })
       .strict()
       .optional(),
+    elevenlabsAgents: z
+      .object({
+        enabled: z.boolean().optional(),
+        apiKey: z.string().optional(),
+        agentId: z.string().optional(),
+        phoneNumberId: z.string().optional(),
+        defaultDynamicVariables: z.record(z.string(), z.string()).optional(),
+        baseUrl: z.string().optional(),
+        timeoutSeconds: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
