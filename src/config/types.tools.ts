@@ -471,4 +471,21 @@ export type ToolsConfig = {
     /** Request timeout in milliseconds. Default: 30000. */
     timeoutMs?: number;
   };
+  /** ElevenLabs Agents (Conversational AI) tool configuration. */
+  elevenlabsAgents?: {
+    /** Enable ElevenLabs Agents tool (default: true when credentials are present). */
+    enabled?: boolean;
+    /** ElevenLabs API key. */
+    apiKey?: string;
+    /** ElevenLabs Agent ID for outbound calls. */
+    agentId?: string;
+    /** Twilio phone number ID configured in ElevenLabs. */
+    phoneNumberId?: string;
+    /** Default dynamic variables to pass to the agent. */
+    defaultDynamicVariables?: Record<string, string>;
+    /** Base URL for ElevenLabs API. Default: https://api.elevenlabs.io */
+    baseUrl?: string;
+    /** Request timeout in seconds. Default: 60. */
+    timeoutSeconds?: number;
+  };
 };
