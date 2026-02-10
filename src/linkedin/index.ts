@@ -63,8 +63,11 @@ export {
   listWebhooks,
   getUserProfile,
   listConnections,
+  classifyLinkedInError,
   type LinkedInConnection,
   type LinkedInConnectionsResponse,
+  type LinkedInErrorType,
+  type ClassifiedError,
 } from "./client.js";
 
 // Account management

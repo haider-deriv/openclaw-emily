@@ -12,7 +12,13 @@ import type {
   LinkedInMessage,
   LinkedInWebhookPayload,
 } from "./types.js";
-import { listChats, getMessages, getChatAttendees, getUserProfile } from "./client.js";
+import {
+  listChats,
+  getMessages,
+  getChatAttendees,
+  getUserProfile,
+  classifyLinkedInError,
+} from "./client.js";
 
 export interface LinkedInPollingConfig {
   clientOpts: LinkedInClientOptions;
@@ -187,7 +193,18 @@ async function pollingLoop(config: LinkedInPollingConfig): Promise<void> {
         log?.(`[LINKEDIN POLLING] Processed ${newMessageCount} new message(s)`);
       }
     } catch (err) {
-      log?.(`[LINKEDIN POLLING] Error: ${String(err)}`);
+      // Classify the error for better handling
+      const classified = classifyLinkedInError(err);
+
+      if (classified.isTransient) {
+        // Transient errors (network, timeout) - log as debug, will retry on next poll
+        log?.(
+          `[LINKEDIN POLLING] Transient ${classified.type} error (will retry): ${classified.message}`,
+        );
+      } else {
+        // Non-transient errors - log as error
+        log?.(`[LINKEDIN POLLING] Error (${classified.type}): ${classified.message}`);
+      }
     }
 
     // Wait for next poll interval

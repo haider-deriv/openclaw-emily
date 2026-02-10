@@ -10,7 +10,12 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { LinkedInPriority, LinkedInRoleScope } from "./types.js";
 import { jsonResult, readNumberParam, readStringParam } from "../agents/tools/common.js";
 import { resolveLinkedInAccount, buildClientOptions, getMissingCredentials } from "./accounts.js";
-import { listConnections, startChat, type LinkedInConnection } from "./client.js";
+import {
+  listConnections,
+  startChat,
+  classifyLinkedInError,
+  type LinkedInConnection,
+} from "./client.js";
 import { searchTalent, formatSearchResultsText } from "./search.js";
 
 // Tool input schema
@@ -443,9 +448,12 @@ export function createLinkedInMessageConnectionTool(options?: {
           formatted: matches.map((c, i) => formatConnection(c, i)).join("\n\n"),
         });
       } catch (err) {
+        const classified = classifyLinkedInError(err);
         return jsonResult({
           success: false,
-          error: `Failed to search connections: ${err instanceof Error ? err.message : String(err)}`,
+          error: classified.userFriendlyMessage,
+          errorType: classified.type,
+          canRetry: classified.isTransient,
         });
       }
     },

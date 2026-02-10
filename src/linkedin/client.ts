@@ -27,6 +27,136 @@ import { resolveFetch } from "../infra/fetch.js";
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
+ * Error classification for better error handling.
+ */
+export type LinkedInErrorType =
+  | "network" // Transient network error (DNS, connection refused, etc.)
+  | "timeout" // Request timed out
+  | "auth" // Authentication/authorization error
+  | "rate_limit" // Rate limited
+  | "not_found" // Resource not found
+  | "api" // API error from Unipile
+  | "unknown"; // Unknown error
+
+export interface ClassifiedError {
+  type: LinkedInErrorType;
+  message: string;
+  userFriendlyMessage: string;
+  isTransient: boolean;
+  originalError: unknown;
+}
+
+/**
+ * Classify an error for better handling and user-friendly messages.
+ */
+export function classifyLinkedInError(err: unknown): ClassifiedError {
+  const errorString = err instanceof Error ? err.message : String(err);
+  const lowerError = errorString.toLowerCase();
+
+  // Network errors (transient)
+  if (
+    lowerError.includes("fetch failed") ||
+    lowerError.includes("enotfound") ||
+    lowerError.includes("econnrefused") ||
+    lowerError.includes("econnreset") ||
+    lowerError.includes("network") ||
+    lowerError.includes("dns") ||
+    lowerError.includes("socket")
+  ) {
+    return {
+      type: "network",
+      message: errorString,
+      userFriendlyMessage:
+        "LinkedIn is temporarily unreachable. This is usually a brief network issue - please try again in a moment.",
+      isTransient: true,
+      originalError: err,
+    };
+  }
+
+  // Timeout errors (transient)
+  if (
+    lowerError.includes("timeout") ||
+    lowerError.includes("aborted") ||
+    lowerError.includes("timed out")
+  ) {
+    return {
+      type: "timeout",
+      message: errorString,
+      userFriendlyMessage:
+        "The LinkedIn request took too long. This can happen during high traffic - please try again.",
+      isTransient: true,
+      originalError: err,
+    };
+  }
+
+  // Rate limiting
+  if (
+    lowerError.includes("rate") ||
+    lowerError.includes("429") ||
+    lowerError.includes("too many")
+  ) {
+    return {
+      type: "rate_limit",
+      message: errorString,
+      userFriendlyMessage:
+        "LinkedIn rate limit reached. Please wait a few minutes before trying again.",
+      isTransient: true,
+      originalError: err,
+    };
+  }
+
+  // Auth errors
+  if (
+    lowerError.includes("401") ||
+    lowerError.includes("403") ||
+    lowerError.includes("unauthorized") ||
+    lowerError.includes("forbidden") ||
+    lowerError.includes("authentication") ||
+    lowerError.includes("disconnected")
+  ) {
+    return {
+      type: "auth",
+      message: errorString,
+      userFriendlyMessage:
+        "LinkedIn authentication issue. The connection may need to be re-established.",
+      isTransient: false,
+      originalError: err,
+    };
+  }
+
+  // Not found
+  if (lowerError.includes("404") || lowerError.includes("not found")) {
+    return {
+      type: "not_found",
+      message: errorString,
+      userFriendlyMessage: "The requested LinkedIn resource was not found.",
+      isTransient: false,
+      originalError: err,
+    };
+  }
+
+  // API errors
+  if (lowerError.includes("api error") || lowerError.includes("linkedin api")) {
+    return {
+      type: "api",
+      message: errorString,
+      userFriendlyMessage: `LinkedIn API error: ${errorString.replace(/linkedin api error[^:]*:/i, "").trim()}`,
+      isTransient: false,
+      originalError: err,
+    };
+  }
+
+  // Unknown
+  return {
+    type: "unknown",
+    message: errorString,
+    userFriendlyMessage: "An unexpected error occurred with LinkedIn. Please try again.",
+    isTransient: false,
+    originalError: err,
+  };
+}
+
+/**
  * Normalize the Unipile base URL to ensure proper protocol and formatting.
  */
 export function normalizeBaseUrl(url: string): string {
