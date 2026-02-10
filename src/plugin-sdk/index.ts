@@ -104,6 +104,7 @@ export {
   TelegramConfigSchema,
 } from "../config/zod-schema.providers-core.js";
 export { WhatsAppConfigSchema } from "../config/zod-schema.providers-whatsapp.js";
+export { LinkedInChannelConfigSchema } from "../config/zod-schema.providers-linkedin.js";
 export {
   BlockStreamingCoalesceSchema,
   DmConfigSchema,
@@ -212,6 +213,10 @@ export {
 } from "../channels/plugins/setup-helpers.js";
 export { formatPairingApproveHint } from "../channels/plugins/helpers.js";
 export { PAIRING_APPROVED_MESSAGE } from "../channels/plugins/pairing-message.js";
+
+export { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
+export type { ReplyDispatcherWithTypingOptions } from "../auto-reply/reply/reply-dispatcher.js";
+export type { MsgContext, FinalizedMsgContext } from "../auto-reply/templating.js";
 
 export type {
   ChannelOnboardingAdapter,
@@ -348,6 +353,9 @@ export { collectWhatsAppStatusIssues } from "../channels/plugins/status-issues/w
 
 // Channel: BlueBubbles
 export { collectBlueBubblesStatusIssues } from "../channels/plugins/status-issues/bluebubbles.js";
+
+// Channel: LinkedIn
+export { linkedinOnboardingAdapter } from "../channels/plugins/onboarding/linkedin.js";
 
 // Channel: LINE
 export {

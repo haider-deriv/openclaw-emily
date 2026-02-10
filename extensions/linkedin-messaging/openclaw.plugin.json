@@ -1,0 +1,9 @@
+{
+  "id": "linkedin",
+  "channels": ["linkedin"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

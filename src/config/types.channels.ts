@@ -2,7 +2,7 @@ import type { GroupPolicy } from "./types.base.js";
 import type { DiscordConfig } from "./types.discord.js";
 import type { GoogleChatConfig } from "./types.googlechat.js";
 import type { IMessageConfig } from "./types.imessage.js";
-import type { LinkedInConfig } from "./types.linkedin.js";
+import type { LinkedInChannelConfig } from "./types.linkedin.js";
 import type { MSTeamsConfig } from "./types.msteams.js";
 import type { SignalConfig } from "./types.signal.js";
 import type { SlackConfig } from "./types.slack.js";
@@ -34,6 +34,6 @@ export type ChannelsConfig = {
   signal?: SignalConfig;
   imessage?: IMessageConfig;
   msteams?: MSTeamsConfig;
-  linkedin?: LinkedInConfig;
+  linkedin?: LinkedInChannelConfig;
   [key: string]: unknown;
 };

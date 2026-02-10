@@ -1,10 +1,10 @@
 /**
  * LinkedIn Module
  *
- * LinkedIn talent search integration using Unipile API.
+ * LinkedIn talent search and messaging integration using Unipile API.
  */
 
-// Types
+// Types - Talent Search
 export type {
   LinkedInAccountConfig,
   LinkedInConfig,
@@ -26,15 +26,48 @@ export type {
   LinkedInRecruiterSearchParams,
   LinkedInSearchRequestBody,
   LinkedInApiError,
+  // Types - Messaging
+  LinkedInMessagingConfig,
+  LinkedInChat,
+  LinkedInChatListResponse,
+  LinkedInMessage,
+  LinkedInMessageListResponse,
+  LinkedInMessageAttachment,
+  LinkedInChatAttendee,
+  LinkedInChatAttendeesResponse,
+  LinkedInStartChatRequest,
+  LinkedInStartChatResponse,
+  LinkedInSendMessageRequest,
+  LinkedInSendMessageResponse,
+  LinkedInCreateWebhookRequest,
+  LinkedInCreateWebhookResponse,
+  LinkedInWebhookPayload,
+  LinkedInUserProfile,
 } from "./types.js";
 
-// Client functions
+// Client functions - Talent Search
 export {
   normalizeBaseUrl,
   linkedInRequest,
   searchLinkedIn,
   getSearchParameters,
   checkLinkedInConnection,
+  // Client functions - Messaging
+  listChats,
+  getMessages,
+  getChatAttendees,
+  sendMessage,
+  startChat,
+  createWebhook,
+  deleteWebhook,
+  listWebhooks,
+  getUserProfile,
+  listConnections,
+  classifyLinkedInError,
+  type LinkedInConnection,
+  type LinkedInConnectionsResponse,
+  type LinkedInErrorType,
+  type ClassifiedError,
 } from "./client.js";
 
 // Account management
@@ -54,9 +87,10 @@ export type { TalentSearchParams, TalentSearchResult, FormattedCandidate } from 
 
 export { searchTalent, lookupSearchParameter, formatSearchResultsText } from "./search.js";
 
-// Agent tool
+// Agent tools
 export {
   createLinkedInTalentSearchTool,
+  createLinkedInMessageConnectionTool,
   isLinkedInTalentSearchAvailable,
   getLinkedInTalentSearchStatus,
 } from "./tool.js";
