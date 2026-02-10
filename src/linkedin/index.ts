@@ -62,6 +62,9 @@ export {
   deleteWebhook,
   listWebhooks,
   getUserProfile,
+  listConnections,
+  type LinkedInConnection,
+  type LinkedInConnectionsResponse,
 } from "./client.js";
 
 // Account management
@@ -81,9 +84,10 @@ export type { TalentSearchParams, TalentSearchResult, FormattedCandidate } from 
 
 export { searchTalent, lookupSearchParameter, formatSearchResultsText } from "./search.js";
 
-// Agent tool
+// Agent tools
 export {
   createLinkedInTalentSearchTool,
+  createLinkedInMessageConnectionTool,
   isLinkedInTalentSearchAvailable,
   getLinkedInTalentSearchStatus,
 } from "./tool.js";

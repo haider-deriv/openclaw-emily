@@ -527,3 +527,64 @@ export async function getUserProfile(
   const path = `/api/v1/users/${encodeURIComponent(identifier)}?${queryParams.toString()}`;
   return linkedInRequest<LinkedInUserProfile>("GET", path, opts);
 }
+
+/**
+ * Connection/relation from the relations list.
+ */
+export type LinkedInConnection = {
+  object: "UserRelation";
+  first_name: string;
+  last_name: string;
+  headline: string;
+  public_identifier: string;
+  public_profile_url: string;
+  created_at: number;
+  member_id: string;
+  member_urn: string;
+  connection_urn: string;
+  profile_picture_url?: string;
+};
+
+/**
+ * Response from listing connections.
+ */
+export type LinkedInConnectionsResponse = {
+  object: "UserRelationsList";
+  items: LinkedInConnection[];
+  cursor: string | null;
+};
+
+/**
+ * List connections (relations) for a LinkedIn account.
+ * GET /api/v1/users/relations
+ *
+ * @param opts - Client options
+ * @param params - Optional parameters
+ * @param params.filter - Filter by user name (searches first_name + last_name)
+ * @param params.limit - Number of results (1-1000)
+ * @param params.cursor - Pagination cursor
+ */
+export async function listConnections(
+  opts: LinkedInClientOptions,
+  params?: {
+    filter?: string;
+    limit?: number;
+    cursor?: string;
+  },
+): Promise<LinkedInConnectionsResponse> {
+  const queryParams = new URLSearchParams();
+  queryParams.set("account_id", opts.accountId);
+
+  if (params?.filter) {
+    queryParams.set("filter", params.filter);
+  }
+  if (params?.limit) {
+    queryParams.set("limit", String(Math.min(Math.max(params.limit, 1), 1000)));
+  }
+  if (params?.cursor) {
+    queryParams.set("cursor", params.cursor);
+  }
+
+  const path = `/api/v1/users/relations?${queryParams.toString()}`;
+  return linkedInRequest<LinkedInConnectionsResponse>("GET", path, opts);
+}
