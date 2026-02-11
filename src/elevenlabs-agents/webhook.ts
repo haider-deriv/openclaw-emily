@@ -35,6 +35,11 @@ function parseSignatureHeader(
     }
   }
 
+  // Try t/v0 format (ElevenLabs uses this)
+  if (parts.t && parts.v0) {
+    return { timestamp: parts.t, signature: parts.v0 };
+  }
+
   // Try t/v1 format
   if (parts.t && parts.v1) {
     return { timestamp: parts.t, signature: parts.v1 };
