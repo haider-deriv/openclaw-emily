@@ -236,6 +236,8 @@ async function makeRequest<T>(
  * Initiate an outbound call via ElevenLabs Conversational AI.
  *
  * POST /v1/convai/twilio/outbound-call
+ *
+ * Note: ElevenLabs returns HTTP 200 even on Twilio failures, with success=false in body.
  */
 export async function initiateOutboundCall(
   opts: ElevenLabsClientOptions,
@@ -258,7 +260,19 @@ export async function initiateOutboundCall(
     };
   }
 
-  return makeRequest<OutboundCallResponse>(opts, "POST", "/v1/convai/twilio/outbound-call", body);
+  const response = await makeRequest<OutboundCallResponse>(
+    opts,
+    "POST",
+    "/v1/convai/twilio/outbound-call",
+    body,
+  );
+
+  // ElevenLabs returns HTTP 200 with success=false for Twilio errors
+  if (response.success === false) {
+    throw new Error(response.message ?? "ElevenLabs call initiation failed");
+  }
+
+  return response;
 }
 
 /**
