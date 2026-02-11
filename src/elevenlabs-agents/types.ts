@@ -37,10 +37,14 @@ export type OutboundCallRequest = {
 
 /**
  * Response from initiating an outbound call.
+ * Note: ElevenLabs returns HTTP 200 even on failures, with success=false.
  */
 export type OutboundCallResponse = {
-  conversation_id: string;
+  conversation_id: string | null;
   status?: string;
+  success?: boolean;
+  message?: string;
+  callSid?: string | null;
 };
 
 /**

@@ -167,9 +167,19 @@ async function handleInitiateCall(params: {
       dynamicVariables: Object.keys(mergedVariables).length > 0 ? mergedVariables : undefined,
     });
 
+    // Validate we got a conversation ID (should always be present on success)
+    if (!response.conversation_id) {
+      return jsonResult({
+        success: false,
+        error: "Call initiation failed: no conversation ID returned",
+      });
+    }
+
+    const conversationId = response.conversation_id;
+
     // Save initial conversation record
     const storedConversation = createInitialStoredConversation({
-      conversationId: response.conversation_id,
+      conversationId,
       toNumber,
       dynamicVariables: mergedVariables,
     });
@@ -177,10 +187,10 @@ async function handleInitiateCall(params: {
 
     return jsonResult({
       success: true,
-      conversation_id: response.conversation_id,
+      conversation_id: conversationId,
       status: response.status ?? "initiated",
       to_number: toNumber,
-      message: `Call initiated to ${toNumber}. Use get_conversation or poll_until_done with conversation_id "${response.conversation_id}" to check results.`,
+      message: `Call initiated to ${toNumber}. Use get_conversation or poll_until_done with conversation_id "${conversationId}" to check results.`,
     });
   } catch (err) {
     const classified = classifyElevenLabsError(err);
