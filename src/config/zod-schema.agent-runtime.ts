@@ -583,6 +583,23 @@ export const ToolsSchema = z
       })
       .strict()
       .optional(),
+    talentlyAgent: z
+      .object({
+        enabled: z.boolean().optional(),
+        agentUrl: z.string().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    talentlyCvAnalysis: z
+      .object({
+        enabled: z.boolean().optional(),
+        apiUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

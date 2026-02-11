@@ -7,6 +7,8 @@ import {
   createLinkedInMessageConnectionTool,
 } from "../linkedin/tool.js";
 import { resolvePluginTools } from "../plugins/tools.js";
+import { createTalentlyCVAnalysisTool } from "../talently-cv-analysis/tool.js";
+import { createTalentlyTool } from "../talently/tool.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
@@ -175,6 +177,22 @@ export function createOpenClawTools(options?: {
   });
   if (elevenLabsAgentsTool) {
     tools.push(elevenLabsAgentsTool);
+  }
+
+  // Talently Agent tool (for answering recruitment questions)
+  const talentlyAgentTool = createTalentlyTool({
+    config: options?.config,
+  });
+  if (talentlyAgentTool) {
+    tools.push(talentlyAgentTool);
+  }
+
+  // Talently CV Analysis tool
+  const talentlyCVAnalysisTool = createTalentlyCVAnalysisTool({
+    config: options?.config,
+  });
+  if (talentlyCVAnalysisTool) {
+    tools.push(talentlyCVAnalysisTool);
   }
 
   const pluginTools = resolvePluginTools({
