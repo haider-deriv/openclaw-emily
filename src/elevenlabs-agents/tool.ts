@@ -47,10 +47,39 @@ const ElevenLabsAgentsSchema = Type.Object({
     }),
   ),
   dynamic_variables: Type.Optional(
-    Type.Record(Type.String(), Type.String(), {
-      description:
-        "Dynamic variables to pass to the agent. Required: candidate_name. Optional: position, company, key_requirements, questions_to_ask",
-    }),
+    Type.Object(
+      {
+        candidate_name: Type.Optional(
+          Type.String({
+            description: "Name of the candidate being called (required for calls)",
+          }),
+        ),
+        position: Type.Optional(
+          Type.String({
+            description: "Job position being discussed",
+          }),
+        ),
+        company: Type.Optional(
+          Type.String({
+            description: "Company name",
+          }),
+        ),
+        key_requirements: Type.Optional(
+          Type.String({
+            description: "Key job requirements to discuss",
+          }),
+        ),
+        questions_to_ask: Type.Optional(
+          Type.String({
+            description: "Specific questions to ask during the call",
+          }),
+        ),
+      },
+      {
+        description:
+          "Dynamic variables to customize the agent's context. candidate_name is required for initiating calls.",
+      },
+    ),
   ),
   // get_conversation / poll_until_done params
   conversation_id: Type.Optional(
