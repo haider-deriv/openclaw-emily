@@ -20,7 +20,7 @@ export type TalentlyCVAnalysisConfig = {
 // =============================================================================
 
 /**
- * Response from the /analyze/batch endpoint.
+ * Response from the endpoint.
  */
 export type BatchJobCreateResponse = {
   job_id: string;

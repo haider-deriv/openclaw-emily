@@ -43,7 +43,7 @@ export function buildClientOptions(
 /**
  * Submit CVs for batch analysis.
  *
- * POST /analyze/batch (multipart/form-data)
+ * POST (multipart/form-data)
  */
 export async function submitCVsForAnalysis(
   opts: TalentlyCVAnalysisClientOptions,
@@ -83,7 +83,7 @@ export async function submitCVsForAnalysis(
     }
 
     // Make request
-    const response = await fetch(`${opts.apiUrl}/analyze/batch`, {
+    const response = await fetch(`${opts.apiUrl}`, {
       method: "POST",
       headers,
       body: formData,
