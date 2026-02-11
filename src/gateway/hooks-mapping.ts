@@ -74,6 +74,18 @@ const hookPresetMappings: Record<string, HookMappingConfig[]> = {
         "New email from {{messages[0].from}}\nSubject: {{messages[0].subject}}\n{{messages[0].snippet}}\n{{messages[0].body}}",
     },
   ],
+  elevenlabs: [
+    {
+      id: "elevenlabs",
+      match: { path: "elevenlabs" },
+      action: "agent",
+      wakeMode: "now",
+      name: "ElevenLabs Call",
+      sessionKey: "hook:elevenlabs:{{conversation_id}}",
+      messageTemplate:
+        'ElevenLabs call completed.\nStatus: {{status}}\nConversation ID: {{conversation_id}}\n\nUse the elevenlabs_agents tool with action "get_conversation" to retrieve the full transcript and analysis.',
+    },
+  ],
 };
 
 const transformCache = new Map<string, HookTransformFn>();
@@ -102,6 +114,7 @@ type HookTransformFn = (
 export function resolveHookMappings(hooks?: HooksConfig): HookMappingResolved[] {
   const presets = hooks?.presets ?? [];
   const gmailAllowUnsafe = hooks?.gmail?.allowUnsafeExternalContent;
+  const elevenlabsAllowUnsafe = hooks?.elevenlabs?.allowUnsafeExternalContent;
   const mappings: HookMappingConfig[] = [];
   if (hooks?.mappings) {
     mappings.push(...hooks.mappings);
@@ -116,6 +129,15 @@ export function resolveHookMappings(hooks?: HooksConfig): HookMappingResolved[] 
         ...presetMappings.map((mapping) => ({
           ...mapping,
           allowUnsafeExternalContent: gmailAllowUnsafe,
+        })),
+      );
+      continue;
+    }
+    if (preset === "elevenlabs" && typeof elevenlabsAllowUnsafe === "boolean") {
+      mappings.push(
+        ...presetMappings.map((mapping) => ({
+          ...mapping,
+          allowUnsafeExternalContent: elevenlabsAllowUnsafe,
         })),
       );
       continue;
