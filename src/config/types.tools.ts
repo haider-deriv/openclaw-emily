@@ -497,4 +497,15 @@ export type ToolsConfig = {
     /** Request timeout in milliseconds. Default: 60000. */
     timeoutMs?: number;
   };
+  /** Talently CV Analysis tool configuration. */
+  talentlyCvAnalysis?: {
+    /** Enable Talently CV Analysis tool (default: true when apiUrl is present). */
+    enabled?: boolean;
+    /** URL of the CV Analysis API (e.g., "https://skillssue.example.com/api"). */
+    apiUrl?: string;
+    /** JWT auth token for API authentication. */
+    authToken?: string;
+    /** Request timeout in milliseconds. Default: 120000. */
+    timeoutMs?: number;
+  };
 };
