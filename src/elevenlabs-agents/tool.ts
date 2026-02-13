@@ -27,6 +27,8 @@ import {
   listStoredConversations,
   createInitialStoredConversation,
   updateConversationFromApi,
+  getPreviousCallSummary,
+  type StoredConversationWithId,
 } from "./store.js";
 
 // =============================================================================
@@ -38,10 +40,11 @@ const ElevenLabsAgentsSchema = Type.Object({
   action: Type.String({
     description: 'Action to perform: "initiate_call", "get_conversation", or "list_conversations"',
   }),
-  // initiate_call params
+  // initiate_call params (required for initiate_call action)
   to_number: Type.Optional(
     Type.String({
-      description: "Phone number to call (E.164 format, e.g., +1234567890)",
+      description:
+        "Phone number to call (E.164 format, e.g., +1234567890). Required for initiate_call.",
     }),
   ),
   dynamic_variables: Type.Optional(
@@ -49,33 +52,13 @@ const ElevenLabsAgentsSchema = Type.Object({
       {
         candidate_name: Type.Optional(
           Type.String({
-            description: "Name of the candidate being called (required for calls)",
-          }),
-        ),
-        position: Type.Optional(
-          Type.String({
-            description: "Job position being discussed",
-          }),
-        ),
-        company: Type.Optional(
-          Type.String({
-            description: "Company name",
-          }),
-        ),
-        key_requirements: Type.Optional(
-          Type.String({
-            description: "Key job requirements to discuss",
-          }),
-        ),
-        questions_to_ask: Type.Optional(
-          Type.String({
-            description: "Specific questions to ask during the call",
+            description: "Name of the candidate being called. Required for initiate_call.",
           }),
         ),
       },
       {
         description:
-          "Dynamic variables to customize the agent's context. candidate_name is required for initiating calls.",
+          "Dynamic variables to customize the agent's context. Required for initiate_call action.",
       },
     ),
   ),
@@ -130,7 +113,7 @@ async function handleInitiateCall(params: {
 
   try {
     // Merge default dynamic variables with provided ones
-    const mergedVariables = {
+    const mergedVariables: Record<string, string> = {
       ...resolvedConfig.defaultDynamicVariables,
       ...dynamicVariables,
     };
@@ -141,6 +124,14 @@ async function handleInitiateCall(params: {
         success: false,
         error: "candidate_name is required in dynamic_variables",
       });
+    }
+
+    // Look up previous call summary for this phone number
+    const previousSummary = await getPreviousCallSummary(workspaceDir, toNumber);
+    if (previousSummary) {
+      mergedVariables.previous_call_summary = previousSummary;
+    } else {
+      mergedVariables.previous_call_summary = "This is the first call to this number.";
     }
 
     const response = await initiateOutboundCall(clientOpts, {
@@ -162,11 +153,10 @@ async function handleInitiateCall(params: {
 
     // Save initial conversation record
     const storedConversation = createInitialStoredConversation({
-      conversationId,
       toNumber,
       dynamicVariables: mergedVariables,
     });
-    await saveConversation(workspaceDir, storedConversation);
+    await saveConversation(workspaceDir, conversationId, storedConversation);
 
     return jsonResult({
       success: true,

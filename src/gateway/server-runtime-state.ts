@@ -11,10 +11,12 @@ import type { HooksConfigResolved } from "./hooks.js";
 import type { DedupeEntry } from "./server-shared.js";
 import type { GatewayTlsRuntime } from "./server/tls.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { CANVAS_HOST_PATH } from "../canvas-host/a2ui.js";
 import { type CanvasHostHandler, createCanvasHostHandler } from "../canvas-host/server.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
 import { resolveElevenLabsAgentsConfig } from "../elevenlabs-agents/config.js";
+import { saveConversationFromWebhook } from "../elevenlabs-agents/store.js";
 import { registerElevenLabsWebhookHandler } from "../elevenlabs-agents/webhook.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
@@ -126,18 +128,47 @@ export async function createGatewayRuntimeState(params: {
   // Register ElevenLabs webhook handler if configured
   const elevenLabsConfig = resolveElevenLabsAgentsConfig(params.cfg);
   if (elevenLabsConfig.webhookSecret) {
+    const defaultAgentId = resolveDefaultAgentId(params.cfg);
+    const workspaceDir = resolveAgentWorkspaceDir(params.cfg, defaultAgentId);
+
     registerElevenLabsWebhookHandler({
       webhookSecret: elevenLabsConfig.webhookSecret,
       webhookPath: elevenLabsConfig.webhookPath,
-      onWebhook: (payload) => {
+      onWebhook: async (payload) => {
+        // Save webhook data directly to store
+        try {
+          await saveConversationFromWebhook(workspaceDir, payload);
+          params.log.info(
+            `elevenlabs webhook: saved conversation ${payload.conversationId} (${payload.status})`,
+          );
+        } catch (err) {
+          params.log.warn(
+            `elevenlabs webhook: failed to save conversation ${payload.conversationId}: ${err}`,
+          );
+        }
+
+        // Notify agent with summary and data collection results
         const mainSessionKey = resolveMainSessionKeyFromConfig();
         const statusText = payload.status === "done" ? "completed" : payload.status;
-        const message = `ElevenLabs call ${statusText}. Conversation ID: ${payload.conversationId}. Use elevenlabs_agents tool with action "get_conversation" to retrieve details.`;
+
+        // Extract data collection results
+        const dataCollectionList = payload.analysis?.data_collection_results_list as
+          | Array<{ data_collection_id: string; value: unknown }>
+          | undefined;
+        const dataPoints = dataCollectionList
+          ?.map((item) => `${item.data_collection_id}: ${JSON.stringify(item.value)}`)
+          .join(", ");
+        const dataText = dataPoints ? ` Data: ${dataPoints}.` : "";
+
+        // Extract summary
+        const hasSummary = payload.analysis?.transcript_summary;
+        const summaryText = hasSummary
+          ? ` Summary: ${String(payload.analysis?.transcript_summary).slice(0, 500)}`
+          : "";
+
+        const message = `ElevenLabs call ${statusText}. Conversation ID: ${payload.conversationId}.${dataText}${summaryText}`;
         enqueueSystemEvent(message, { sessionKey: mainSessionKey });
         requestHeartbeatNow({ reason: `elevenlabs:${payload.conversationId}` });
-        params.log.info(
-          `elevenlabs webhook received: ${payload.conversationId} (${payload.status})`,
-        );
       },
     });
     params.log.info(`elevenlabs webhook enabled at ${elevenLabsConfig.webhookPath}`);

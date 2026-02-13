@@ -186,7 +186,7 @@ export type ElevenLabsWebhookHandlerOptions = {
     transcript?: Array<{ role: string; message: string }>;
     analysis?: Record<string, unknown>;
     metadata?: Record<string, unknown>;
-  }) => void;
+  }) => void | Promise<void>;
 };
 
 /**
@@ -293,7 +293,7 @@ export async function handleElevenLabsWebhookRequest(
     return false;
   }
 
-  console.log(`[elevenlabs-webhook] Received ${req.method} request to ${url.pathname}`);
+  console.log(`[elevenlabs-webhook] Received`);
 
   // Only accept POST
   if (req.method !== "POST") {
@@ -306,8 +306,6 @@ export async function handleElevenLabsWebhookRequest(
 
   // Get signature header
   const signatureHeader = req.headers["elevenlabs-signature"];
-  console.log(`[elevenlabs-webhook] Signature header: ${signatureHeader}`);
-  console.log(`[elevenlabs-webhook] All headers: ${JSON.stringify(req.headers, null, 2)}`);
   if (!signatureHeader || typeof signatureHeader !== "string") {
     console.log("[elevenlabs-webhook] Rejected: Missing ElevenLabs-Signature header");
     res.statusCode = 401;
@@ -369,12 +367,12 @@ export async function handleElevenLabsWebhookRequest(
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify({ ok: true }));
 
-  // Process webhook asynchronously
-  try {
-    onWebhook(normalized);
-  } catch (err) {
-    console.error("[elevenlabs-webhook] Handler error:", err);
-  }
+  // Process webhook asynchronously (response already sent)
+  Promise.resolve()
+    .then(() => onWebhook(normalized))
+    .catch((err) => {
+      console.error("[elevenlabs-webhook] Handler error:", err);
+    });
 
   return true;
 }
@@ -458,12 +456,12 @@ export function createElevenLabsWebhookHandler(
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ ok: true }));
 
-    // Process webhook asynchronously
-    try {
-      onWebhook(normalized);
-    } catch (err) {
-      console.error("[elevenlabs-webhook] Handler error:", err);
-    }
+    // Process webhook asynchronously (response already sent)
+    Promise.resolve()
+      .then(() => onWebhook(normalized))
+      .catch((err) => {
+        console.error("[elevenlabs-webhook] Handler error:", err);
+      });
 
     return true;
   };

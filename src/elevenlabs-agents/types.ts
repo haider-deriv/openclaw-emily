@@ -52,38 +52,99 @@ export type OutboundCallResponse = {
 };
 
 /**
- * Single transcript entry from a conversation.
+ * Single transcript entry from a conversation (simplified).
  */
 export type TranscriptEntry = {
   role: "agent" | "user";
   message: string;
-  time_in_call_secs: number;
+  time_in_call_secs?: number; // Optional, from API but not stored
 };
 
 /**
- * Conversation metadata from ElevenLabs.
+ * Simplified transcript entry for storage.
+ */
+export type StoredTranscriptEntry = {
+  role: "agent" | "user";
+  message: string;
+};
+
+/**
+ * Phone call metadata.
+ */
+export type PhoneCallMetadata = {
+  direction?: string;
+  phone_number_id?: string;
+  agent_number?: string;
+  external_number?: string;
+  type?: string;
+  stream_sid?: string;
+  call_sid?: string;
+};
+
+/**
+ * Conversation metadata from ElevenLabs (simplified for storage).
  */
 export type ConversationMetadata = {
   call_duration_secs?: number;
+  phone_call?: PhoneCallMetadata;
+  conversation_initiation_source?: string;
+  timezone?: string;
+  whatsapp?: unknown;
+  // API fields not stored
   start_time_unix_secs?: number;
   end_time_unix_secs?: number;
   [key: string]: unknown;
 };
 
 /**
- * Analysis/extraction results from the conversation.
- * Configured in ElevenLabs Agent settings.
+ * Simplified metadata for storage.
+ */
+export type StoredMetadata = {
+  call_duration_secs?: number;
+  phone_call?: PhoneCallMetadata;
+  conversation_initiation_source?: string;
+  timezone?: string;
+  whatsapp?: unknown;
+};
+
+/**
+ * Data collection result from analysis.
+ */
+export type DataCollectionResult = {
+  data_collection_id: string;
+  value: unknown;
+  json_schema?: {
+    type?: string;
+    description?: string;
+    enum?: unknown;
+    is_system_provided?: boolean;
+    dynamic_variable?: string;
+    constant_value?: string;
+  };
+  rationale?: string;
+};
+
+/**
+ * Analysis/extraction results from the conversation (simplified for storage).
  */
 export type ConversationAnalysis = {
-  interested?: boolean;
-  availability?: string;
-  salary_expectation?: string;
-  visa_status?: string;
-  preferred_interview_times?: string[];
-  concerns?: string[];
-  overall_sentiment?: string;
-  call_summary?: string;
+  evaluation_criteria_results_list?: unknown[];
+  data_collection_results_list?: DataCollectionResult[];
+  call_successful?: string;
+  transcript_summary?: string;
+  call_summary_title?: string;
   [key: string]: unknown;
+};
+
+/**
+ * Simplified analysis for storage.
+ */
+export type StoredAnalysis = {
+  evaluation_criteria_results_list?: unknown[];
+  data_collection_results_list?: DataCollectionResult[];
+  call_successful?: string;
+  transcript_summary?: string;
+  call_summary_title?: string;
 };
 
 /**
@@ -131,19 +192,16 @@ export type ConversationListItem = {
 // =============================================================================
 
 /**
- * Stored conversation with local metadata.
+ * Stored conversation with local metadata (simplified structure).
  */
 export type StoredConversation = {
-  conversation_id: string;
   initiated_at: string;
   to_number: string;
   dynamic_variables?: Record<string, string>;
   status: ConversationStatus;
-  transcript?: TranscriptEntry[];
-  analysis?: ConversationAnalysis;
-  metadata?: ConversationMetadata;
-  last_polled?: string;
-  error?: string;
+  transcript?: StoredTranscriptEntry[];
+  analysis?: StoredAnalysis;
+  metadata?: StoredMetadata;
 };
 
 /**
