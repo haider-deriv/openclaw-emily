@@ -22,7 +22,13 @@ import { resolveSlackChannelTarget, resolveSlackUserTarget } from "../../slack/r
 import { parseSlackTarget } from "../../slack/targets.js";
 import { resolveSlackBotToken, resolveSlackUserToken } from "../../slack/token.js";
 import { withNormalizedTimestamp } from "../date-time.js";
-import { createActionGate, jsonResult, readReactionParams, readStringParam } from "./common.js";
+import {
+  createActionGate,
+  jsonResult,
+  readNumberParam,
+  readReactionParams,
+  readStringParam,
+} from "./common.js";
 
 const messagingActions = new Set(["sendMessage", "editMessage", "deleteMessage", "readMessages"]);
 
@@ -363,8 +369,18 @@ export async function handleSlackAction(
     if (!isActionEnabled("emojiList")) {
       throw new Error("Slack emoji list is disabled.");
     }
-    const emojis = readOpts ? await listSlackEmojis(readOpts) : await listSlackEmojis();
-    return jsonResult({ ok: true, emojis });
+    const result = readOpts ? await listSlackEmojis(readOpts) : await listSlackEmojis();
+    const limit = readNumberParam(params, "limit", { integer: true });
+    if (limit != null && limit > 0 && result.emoji != null) {
+      const entries = Object.entries(result.emoji).toSorted(([a], [b]) => a.localeCompare(b));
+      if (entries.length > limit) {
+        return jsonResult({
+          ok: true,
+          emojis: { ...result, emoji: Object.fromEntries(entries.slice(0, limit)) },
+        });
+      }
+    }
+    return jsonResult({ ok: true, emojis: result });
   }
 
   throw new Error(`Unknown action: ${action}`);
