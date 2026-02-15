@@ -5,9 +5,11 @@ import type { AnyAgentTool } from "./tools/common.js";
 import { createElevenLabsAgentsTool } from "../elevenlabs-agents/tool.js";
 import {
   createLinkedInTalentSearchTool,
+  createLinkedInCandidateEnrichTool,
   createLinkedInMessageConnectionTool,
 } from "../linkedin/tool.js";
 import { resolvePluginTools } from "../plugins/tools.js";
+import { createCandidatePipelineTool } from "../recruiting/tool.js";
 import { createTalentlyCVAnalysisTool } from "../talently-cv-analysis/tool.js";
 import { createTalentlyTool } from "../talently/tool.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
@@ -168,6 +170,13 @@ export function createOpenClawTools(options?: {
     tools.push(linkedInTalentTool);
   }
 
+  const linkedInCandidateEnrichTool = createLinkedInCandidateEnrichTool({
+    config: options?.config,
+  });
+  if (linkedInCandidateEnrichTool) {
+    tools.push(linkedInCandidateEnrichTool);
+  }
+
   const linkedInMessageTool = createLinkedInMessageConnectionTool({
     config: options?.config,
   });
@@ -198,6 +207,13 @@ export function createOpenClawTools(options?: {
   });
   if (talentlyCVAnalysisTool) {
     tools.push(talentlyCVAnalysisTool);
+  }
+
+  const candidatePipelineTool = createCandidatePipelineTool({
+    config: options?.config,
+  });
+  if (candidatePipelineTool) {
+    tools.push(candidatePipelineTool);
   }
 
   const pluginTools = resolvePluginTools({

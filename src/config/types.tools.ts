@@ -336,8 +336,8 @@ export type ToolsConfig = {
     search?: {
       /** Enable web search tool (default: true when API key is present). */
       enabled?: boolean;
-      /** Search provider ("brave", "perplexity", or "grok"). */
-      provider?: "brave" | "perplexity" | "grok";
+      /** Search provider ("brave", "perplexity", "grok", or "exa"). */
+      provider?: "brave" | "perplexity" | "grok" | "exa";
       /** Brave Search API key (optional; defaults to BRAVE_API_KEY env var). */
       apiKey?: string;
       /** Default search results count (1-10). */
@@ -363,6 +363,11 @@ export type ToolsConfig = {
         model?: string;
         /** Include inline citations in response text as markdown links (default: false). */
         inlineCitations?: boolean;
+      };
+      /** Exa-specific configuration (used when provider="exa"). */
+      exa?: {
+        /** API key for Exa (defaults to EXA_API_KEY env var). */
+        apiKey?: string;
       };
     };
     fetch?: {
@@ -470,6 +475,54 @@ export type ToolsConfig = {
     accountId?: string;
     /** Request timeout in milliseconds. Default: 30000. */
     timeoutMs?: number;
+  };
+  /** Recruiting pipeline configuration. */
+  recruiting?: {
+    /** Enable recruiting tools/pipeline. Default: false (opt-in). */
+    enabled?: boolean;
+    store?: {
+      /** SQLite path for recruiting store. Default: ${OPENCLAW_STATE_DIR}/recruiting/candidates.sqlite */
+      path?: string;
+    };
+    identity?: {
+      /** Minimum confidence required for shortlist eligibility. Default: 0.8 */
+      minConfidenceForShortlist?: number;
+    };
+    run?: {
+      /** Daily target candidates per role. Default: 300 */
+      targetCandidatesPerRole?: number;
+      /** Default cadence string (cron expression). */
+      defaultCadence?: string;
+    };
+    browserVerification?: {
+      /** Enable selective browser verification stage. */
+      enabled?: boolean;
+      /** Verification mode. */
+      mode?: "high_only" | "always";
+    };
+    /** Daily output contract quotas for hybrid workflow. */
+    dailyQuotas?: {
+      /** Target promoted candidates per day. Default: 10 */
+      promotedTarget?: number;
+      /** Target reviewed candidates per day. Default: 30 */
+      reviewedTarget?: number;
+      /** Max manual verifications per day. Default: 20 */
+      verificationBudget?: number;
+    };
+    /** Promotion requirements for hybrid workflow. */
+    promotion?: {
+      /** Minimum proof links required for manual promotion. Default: 2 */
+      minProofLinks?: number;
+      /** Allow promotion without browser verification. Default: false */
+      allowUnverifiedPromotion?: boolean;
+    };
+    /** Lane targeting for hybrid workflow. */
+    laneTargeting?: {
+      /** G1 (high-priority) lane percentage. Default: 0.6 */
+      g1Percentage?: number;
+      /** G2 (standard) lane percentage. Default: 0.4 */
+      g2Percentage?: number;
+    };
   };
   /** ElevenLabs Agents (Conversational AI) tool configuration. */
   elevenlabsAgents?: {

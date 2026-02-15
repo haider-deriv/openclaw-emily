@@ -296,6 +296,26 @@
       "title": "Web Fetch",
       "detailKeys": ["url", "extractMode", "maxChars"]
     },
+    "linkedin_talent_search": {
+      "emoji": "💼",
+      "title": "LinkedIn Search",
+      "detailKeys": ["keywords", "api", "page_size", "max_pages"]
+    },
+    "linkedin_candidate_enrich": {
+      "emoji": "🧩",
+      "title": "LinkedIn Enrich",
+      "detailKeys": ["identifier", "linkedin_api", "activity_window_days"]
+    },
+    "linkedin_message_connection": {
+      "emoji": "✉️",
+      "title": "LinkedIn Message",
+      "detailKeys": ["name", "confirm_id"]
+    },
+    "candidate_pipeline": {
+      "emoji": "🎯",
+      "title": "Candidate Pipeline",
+      "detailKeys": ["action", "role_key", "run_id", "candidate_id"]
+    },
     "whatsapp_login": {
       "emoji": "🟢",
       "title": "WhatsApp Login",

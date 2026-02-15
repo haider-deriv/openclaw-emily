@@ -4,7 +4,7 @@ import type { AnyAgentTool } from "./common.js";
 import { formatCliCommand } from "../../cli/command-format.js";
 import { wrapWebContent } from "../../security/external-content.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
-import { jsonResult, readNumberParam, readStringParam } from "./common.js";
+import { jsonResult, readNumberParam, readStringArrayParam, readStringParam } from "./common.js";
 import {
   CacheEntry,
   DEFAULT_CACHE_TTL_MINUTES,
@@ -18,7 +18,7 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "perplexity", "grok"] as const;
+const SEARCH_PROVIDERS = ["brave", "perplexity", "grok", "exa"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
@@ -31,6 +31,9 @@ const OPENROUTER_KEY_PREFIXES = ["sk-or-"];
 
 const XAI_API_ENDPOINT = "https://api.x.ai/v1/responses";
 const DEFAULT_GROK_MODEL = "grok-4-1-fast";
+const EXA_SEARCH_ENDPOINT = "https://api.exa.ai/search";
+const EXA_SEARCH_TYPES = new Set(["auto", "neural", "fast", "deep", "instant"]);
+const EXA_PEOPLE_CATEGORY = "people";
 
 const SEARCH_CACHE = new Map<string, CacheEntry<Record<string, unknown>>>();
 const BRAVE_FRESHNESS_SHORTCUTS = new Set(["pd", "pw", "pm", "py"]);
@@ -67,6 +70,31 @@ const WebSearchSchema = Type.Object({
         "Filter results by discovery time. Brave supports 'pd', 'pw', 'pm', 'py', and date range 'YYYY-MM-DDtoYYYY-MM-DD'. Perplexity supports 'pd', 'pw', 'pm', and 'py'.",
     }),
   ),
+  search_type: Type.Optional(
+    Type.String({
+      description:
+        'Exa-only search type ("auto", "neural", "fast", "deep", "instant"). Defaults to "auto".',
+    }),
+  ),
+  category: Type.Optional(
+    Type.String({
+      description:
+        'Exa-only category focus (for example "people", "company", "news", "research paper", "tweet").',
+    }),
+  ),
+  include_domains: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        'Exa-only domain allowlist. Results only come from these domains (e.g. ["linkedin.com"]).',
+      maxItems: 1200,
+    }),
+  ),
+  exclude_domains: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Exa-only domain blocklist.",
+      maxItems: 1200,
+    }),
+  ),
 });
 
 type WebSearchConfig = NonNullable<OpenClawConfig["tools"]>["web"] extends infer Web
@@ -100,6 +128,27 @@ type GrokConfig = {
   apiKey?: string;
   model?: string;
   inlineCitations?: boolean;
+};
+
+type ExaConfig = {
+  apiKey?: string;
+};
+
+type ExaSearchResult = {
+  title?: string;
+  url?: string;
+  text?: string;
+  summary?: string;
+  highlights?: string[];
+  publishedDate?: string;
+  author?: string;
+  score?: number;
+};
+
+type ExaSearchResponse = {
+  requestId?: string;
+  searchType?: string;
+  results?: ExaSearchResult[];
 };
 
 type GrokSearchResponse = {
@@ -189,6 +238,14 @@ function resolveSearchApiKey(search?: WebSearchConfig): string | undefined {
 }
 
 function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
+  if (provider === "exa") {
+    return {
+      error: "missing_exa_api_key",
+      message:
+        "web_search (exa) needs an Exa API key. Set EXA_API_KEY in the Gateway environment, or configure tools.web.search.exa.apiKey.",
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
   if (provider === "perplexity") {
     return {
       error: "missing_perplexity_api_key",
@@ -222,6 +279,9 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
   }
   if (raw === "grok") {
     return "grok";
+  }
+  if (raw === "exa") {
+    return "exa";
   }
   if (raw === "brave") {
     return "brave";
@@ -367,6 +427,26 @@ function resolveGrokInlineCitations(grok?: GrokConfig): boolean {
   return grok?.inlineCitations === true;
 }
 
+function resolveExaConfig(search?: WebSearchConfig): ExaConfig {
+  if (!search || typeof search !== "object") {
+    return {};
+  }
+  const exa = "exa" in search ? search.exa : undefined;
+  if (!exa || typeof exa !== "object") {
+    return {};
+  }
+  return exa as ExaConfig;
+}
+
+function resolveExaApiKey(exa?: ExaConfig): string | undefined {
+  const fromConfig = normalizeApiKey(exa?.apiKey);
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const fromEnv = normalizeApiKey(process.env.EXA_API_KEY);
+  return fromEnv || undefined;
+}
+
 function resolveSearchCount(value: unknown, fallback: number): number {
   const parsed = typeof value === "number" && Number.isFinite(value) ? value : fallback;
   const clamped = Math.max(1, Math.min(MAX_SEARCH_COUNT, Math.floor(parsed)));
@@ -444,6 +524,107 @@ function resolveSiteName(url: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function normalizeExaSearchType(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  return EXA_SEARCH_TYPES.has(normalized) ? normalized : undefined;
+}
+
+function normalizeDomainFilterValue(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    const parsed = trimmed.includes("://") ? new URL(trimmed) : new URL(`https://${trimmed}`);
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return trimmed.split("/")[0] ?? "";
+  }
+}
+
+function normalizeDomainFilters(values: string[] | undefined): string[] | undefined {
+  if (!values || values.length === 0) {
+    return undefined;
+  }
+  const deduped = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizeDomainFilterValue(value);
+    if (!normalized) {
+      continue;
+    }
+    deduped.add(normalized);
+  }
+  return deduped.size > 0 ? [...deduped] : undefined;
+}
+
+function isLinkedInDomain(value: string): boolean {
+  return value === "linkedin.com" || value.endsWith(".linkedin.com");
+}
+
+function normalizeExaCategory(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+function validateExaCategoryFilters(params: {
+  category?: string;
+  includeDomains?: string[];
+  excludeDomains?: string[];
+}): { error: string; message: string; docs: string } | null {
+  if (params.category !== EXA_PEOPLE_CATEGORY) {
+    return null;
+  }
+  if (params.excludeDomains && params.excludeDomains.length > 0) {
+    return {
+      error: "invalid_exa_people_filters",
+      message:
+        "Exa people category does not support exclude_domains. Remove exclude_domains when category is set to people.",
+      docs: "https://exa.ai/docs/reference/search",
+    };
+  }
+  if (!params.includeDomains || params.includeDomains.length === 0) {
+    return null;
+  }
+  const invalid = params.includeDomains.filter((value) => !isLinkedInDomain(value));
+  if (invalid.length === 0) {
+    return null;
+  }
+  return {
+    error: "invalid_exa_people_domains",
+    message:
+      "Exa people category only supports LinkedIn domains in include_domains (for example: linkedin.com).",
+    docs: "https://exa.ai/docs/reference/search",
+  };
+}
+
+function extractExaDescription(result: ExaSearchResult): string {
+  const fromSummary = typeof result.summary === "string" ? result.summary.trim() : "";
+  if (fromSummary) {
+    return fromSummary;
+  }
+  const firstHighlight = Array.isArray(result.highlights)
+    ? result.highlights.find((value) => typeof value === "string" && value.trim())
+    : undefined;
+  if (firstHighlight) {
+    return firstHighlight.trim();
+  }
+  const text = typeof result.text === "string" ? result.text.trim() : "";
+  if (!text) {
+    return "";
+  }
+  const MAX_SNIPPET_CHARS = 600;
+  if (text.length <= MAX_SNIPPET_CHARS) {
+    return text;
+  }
+  return `${text.slice(0, MAX_SNIPPET_CHARS).trimEnd()}...`;
 }
 
 async function runPerplexitySearch(params: {
@@ -549,6 +730,53 @@ async function runGrokSearch(params: {
   return { content, citations, inlineCitations };
 }
 
+async function runExaSearch(params: {
+  query: string;
+  apiKey: string;
+  count: number;
+  timeoutSeconds: number;
+  country?: string;
+  searchType?: string;
+  category?: string;
+  includeDomains?: string[];
+  excludeDomains?: string[];
+}): Promise<ExaSearchResponse> {
+  const body: Record<string, unknown> = {
+    query: params.query,
+    numResults: params.count,
+  };
+  if (params.searchType) {
+    body.type = params.searchType;
+  }
+  if (params.category) {
+    body.category = params.category;
+  }
+  if (params.country) {
+    body.userLocation = params.country.toUpperCase();
+  }
+  if (params.includeDomains && params.includeDomains.length > 0) {
+    body.includeDomains = params.includeDomains;
+  }
+  if (params.excludeDomains && params.excludeDomains.length > 0) {
+    body.excludeDomains = params.excludeDomains;
+  }
+
+  const res = await fetch(EXA_SEARCH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": params.apiKey,
+    },
+    body: JSON.stringify(body),
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    throw new Error(`Exa API error (${res.status}): ${detail || res.statusText}`);
+  }
+  return (await res.json()) as ExaSearchResponse;
+}
+
 async function runWebSearch(params: {
   query: string;
   count: number;
@@ -564,13 +792,19 @@ async function runWebSearch(params: {
   perplexityModel?: string;
   grokModel?: string;
   grokInlineCitations?: boolean;
+  exaSearchType?: string;
+  exaCategory?: string;
+  includeDomains?: string[];
+  excludeDomains?: string[];
 }): Promise<Record<string, unknown>> {
   const cacheKey = normalizeCacheKey(
     params.provider === "brave"
       ? `${params.provider}:${params.query}:${params.count}:${params.country || "default"}:${params.search_lang || "default"}:${params.ui_lang || "default"}:${params.freshness || "default"}`
       : params.provider === "perplexity"
         ? `${params.provider}:${params.query}:${params.perplexityBaseUrl ?? DEFAULT_PERPLEXITY_BASE_URL}:${params.perplexityModel ?? DEFAULT_PERPLEXITY_MODEL}:${params.freshness || "default"}`
-        : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
+        : params.provider === "exa"
+          ? `${params.provider}:${params.query}:${params.count}:${params.country || "default"}:${params.exaSearchType || "auto"}:${params.exaCategory || "default"}:${(params.includeDomains ?? []).join(",")}:${(params.excludeDomains ?? []).join(",")}`
+          : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
   );
   const cached = readCache(SEARCH_CACHE, cacheKey);
   if (cached) {
@@ -630,6 +864,59 @@ async function runWebSearch(params: {
       content: wrapWebContent(content),
       citations,
       inlineCitations,
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  if (params.provider === "exa") {
+    const data = await runExaSearch({
+      query: params.query,
+      apiKey: params.apiKey,
+      count: params.count,
+      timeoutSeconds: params.timeoutSeconds,
+      country: params.country,
+      searchType: params.exaSearchType,
+      category: params.exaCategory,
+      includeDomains: params.includeDomains,
+      excludeDomains: params.excludeDomains,
+    });
+
+    const results = Array.isArray(data.results) ? data.results : [];
+    const mapped = results.map((entry) => {
+      const title = typeof entry.title === "string" ? entry.title : "";
+      const url = typeof entry.url === "string" ? entry.url : "";
+      const description = extractExaDescription(entry);
+      const rawSiteName = resolveSiteName(url);
+      return {
+        title: title ? wrapWebContent(title, "web_search") : "",
+        url,
+        description: description ? wrapWebContent(description, "web_search") : "",
+        published: entry.publishedDate || undefined,
+        siteName: rawSiteName || undefined,
+        author:
+          typeof entry.author === "string" && entry.author
+            ? wrapWebContent(entry.author, "web_search")
+            : undefined,
+        score: typeof entry.score === "number" ? entry.score : undefined,
+      };
+    });
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      count: mapped.length,
+      tookMs: Date.now() - start,
+      searchType: data.searchType ?? params.exaSearchType ?? "auto",
+      category: params.exaCategory,
+      requestId: data.requestId,
+      externalContent: {
+        untrusted: true,
+        source: "web_search",
+        provider: params.provider,
+        wrapped: true,
+      },
+      results: mapped,
     };
     writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
     return payload;
@@ -714,13 +1001,16 @@ export function createWebSearchTool(options?: {
   const provider = resolveSearchProvider(search);
   const perplexityConfig = resolvePerplexityConfig(search);
   const grokConfig = resolveGrokConfig(search);
+  const exaConfig = resolveExaConfig(search);
 
   const description =
     provider === "perplexity"
       ? "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search."
       : provider === "grok"
         ? "Search the web using xAI Grok. Returns AI-synthesized answers with citations from real-time web search."
-        : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
+        : provider === "exa"
+          ? "Search the web using Exa. Supports people/company discovery with domain filtering (for candidate sourcing and research)."
+          : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
 
   return {
     label: "Web Search",
@@ -735,7 +1025,9 @@ export function createWebSearchTool(options?: {
           ? perplexityAuth?.apiKey
           : provider === "grok"
             ? resolveGrokApiKey(grokConfig)
-            : resolveSearchApiKey(search);
+            : provider === "exa"
+              ? resolveExaApiKey(exaConfig)
+              : resolveSearchApiKey(search);
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
@@ -748,6 +1040,14 @@ export function createWebSearchTool(options?: {
       const search_lang = readStringParam(params, "search_lang");
       const ui_lang = readStringParam(params, "ui_lang");
       const rawFreshness = readStringParam(params, "freshness");
+      const rawSearchType = readStringParam(params, "search_type");
+      const rawCategory = readStringParam(params, "category");
+      const includeDomains = normalizeDomainFilters(
+        readStringArrayParam(params, "include_domains"),
+      );
+      const excludeDomains = normalizeDomainFilters(
+        readStringArrayParam(params, "exclude_domains"),
+      );
       if (rawFreshness && provider !== "brave" && provider !== "perplexity") {
         return jsonResult({
           error: "unsupported_freshness",
@@ -763,6 +1063,27 @@ export function createWebSearchTool(options?: {
             "freshness must be one of pd, pw, pm, py, or a range like YYYY-MM-DDtoYYYY-MM-DD.",
           docs: "https://docs.openclaw.ai/tools/web",
         });
+      }
+      const exaSearchType = normalizeExaSearchType(rawSearchType);
+      if (provider === "exa" && rawSearchType && !exaSearchType) {
+        return jsonResult({
+          error: "invalid_exa_search_type",
+          message:
+            'search_type must be one of "auto", "neural", "fast", "deep", or "instant" for Exa web_search.',
+          docs: "https://exa.ai/docs/reference/search",
+        });
+      }
+      const exaCategory = normalizeExaCategory(rawCategory);
+      const exaValidationError =
+        provider === "exa"
+          ? validateExaCategoryFilters({
+              category: exaCategory,
+              includeDomains,
+              excludeDomains,
+            })
+          : null;
+      if (exaValidationError) {
+        return jsonResult(exaValidationError);
       }
       const result = await runWebSearch({
         query,
@@ -783,6 +1104,10 @@ export function createWebSearchTool(options?: {
         perplexityModel: resolvePerplexityModel(perplexityConfig),
         grokModel: resolveGrokModel(grokConfig),
         grokInlineCitations: resolveGrokInlineCitations(grokConfig),
+        exaSearchType,
+        exaCategory,
+        includeDomains,
+        excludeDomains,
       });
       return jsonResult(result);
     },
@@ -800,4 +1125,7 @@ export const __testing = {
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  normalizeExaSearchType,
+  normalizeDomainFilters,
+  validateExaCategoryFilters,
 } as const;

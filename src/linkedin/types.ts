@@ -300,10 +300,16 @@ export type LinkedInRecruiterSearchParams = {
   >;
 };
 
+// Sales Navigator people search params (same shape as recruiter for supported filters)
+export type LinkedInSalesNavigatorSearchParams = Omit<LinkedInRecruiterSearchParams, "api"> & {
+  api: "sales_navigator";
+};
+
 // Search request body (union of supported types)
 export type LinkedInSearchRequestBody =
   | LinkedInClassicPeopleSearchParams
   | LinkedInRecruiterSearchParams
+  | LinkedInSalesNavigatorSearchParams
   | { cursor: string }
   | { url: string };
 
@@ -558,10 +564,50 @@ export type LinkedInUserProfile = {
   public_identifier: string | null;
   first_name: string | null;
   last_name: string | null;
+  full_name?: string;
   headline?: string;
   location?: string;
+  summary?: string;
+  industry?: string;
+  is_open_to_work?: boolean;
+  is_creator?: boolean;
+  profile_url?: string;
   profile_picture_url?: string;
+  background_picture_url?: string;
   public_profile_url?: string;
+  follower_count?: number;
+  connection_count?: number;
+  profile_sections?: Record<string, unknown>;
+  websites?: Array<{
+    label?: string;
+    url?: string;
+  }>;
+  social_links?: Array<{
+    provider?: string;
+    handle?: string;
+    url?: string;
+  }>;
+  [key: string]: unknown;
+};
+
+export type LinkedInUserActivityItem = {
+  object?: string;
+  id?: string;
+  provider_id?: string;
+  url?: string;
+  text?: string;
+  content?: string;
+  created_at?: string | number;
+  published_at?: string | number;
+  timestamp?: string | number;
+  [key: string]: unknown;
+};
+
+export type LinkedInUserActivityResponse = {
+  object?: string;
+  items?: LinkedInUserActivityItem[];
+  cursor?: string | null;
+  [key: string]: unknown;
 };
 
 // Webhook payload (received from Unipile)

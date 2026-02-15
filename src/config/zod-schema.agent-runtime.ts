@@ -172,7 +172,9 @@ export const ToolPolicySchema = ToolPolicyBaseSchema.superRefine((value, ctx) =>
 export const ToolsWebSearchSchema = z
   .object({
     enabled: z.boolean().optional(),
-    provider: z.union([z.literal("brave"), z.literal("perplexity"), z.literal("grok")]).optional(),
+    provider: z
+      .union([z.literal("brave"), z.literal("perplexity"), z.literal("grok"), z.literal("exa")])
+      .optional(),
     apiKey: z.string().optional().register(sensitive),
     maxResults: z.number().int().positive().optional(),
     timeoutSeconds: z.number().int().positive().optional(),
@@ -193,6 +195,12 @@ export const ToolsWebSearchSchema = z
       })
       .strict()
       .optional(),
+    exa: z
+      .object({
+        apiKey: z.string().optional().register(sensitive),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();
@@ -206,6 +214,18 @@ export const ToolsWebFetchSchema = z
     cacheTtlMinutes: z.number().nonnegative().optional(),
     maxRedirects: z.number().int().nonnegative().optional(),
     userAgent: z.string().optional(),
+    readability: z.boolean().optional(),
+    firecrawl: z
+      .object({
+        enabled: z.boolean().optional(),
+        apiKey: z.string().optional().register(sensitive),
+        baseUrl: z.string().optional(),
+        onlyMainContent: z.boolean().optional(),
+        maxAgeMs: z.number().int().nonnegative().optional(),
+        timeoutSeconds: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();
@@ -567,6 +587,60 @@ export const ToolsSchema = z
         apiKey: z.string().optional(),
         accountId: z.string().optional(),
         timeoutMs: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    recruiting: z
+      .object({
+        enabled: z.boolean().optional(),
+        store: z
+          .object({
+            path: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+        identity: z
+          .object({
+            minConfidenceForShortlist: z.number().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
+        run: z
+          .object({
+            targetCandidatesPerRole: z.number().int().positive().optional(),
+            defaultCadence: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+        browserVerification: z
+          .object({
+            enabled: z.boolean().optional(),
+            mode: z.enum(["high_only", "always"]).optional(),
+          })
+          .strict()
+          .optional(),
+        dailyQuotas: z
+          .object({
+            promotedTarget: z.number().int().positive().optional(),
+            reviewedTarget: z.number().int().positive().optional(),
+            verificationBudget: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+        promotion: z
+          .object({
+            minProofLinks: z.number().int().positive().optional(),
+            allowUnverifiedPromotion: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+        laneTargeting: z
+          .object({
+            g1Percentage: z.number().min(0).max(1).optional(),
+            g2Percentage: z.number().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

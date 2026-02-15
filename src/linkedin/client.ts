@@ -21,6 +21,7 @@ import type {
   LinkedInCreateWebhookRequest,
   LinkedInCreateWebhookResponse,
   LinkedInUserProfile,
+  LinkedInUserActivityResponse,
 } from "./types.js";
 import { resolveFetch } from "../infra/fetch.js";
 
@@ -650,12 +651,96 @@ export async function downloadAttachment(
 export async function getUserProfile(
   opts: LinkedInClientOptions,
   identifier: string,
+  params?: {
+    linkedinApi?: "classic" | "recruiter" | "sales_navigator";
+    linkedinSections?: string[];
+  },
 ): Promise<LinkedInUserProfile> {
   const queryParams = new URLSearchParams();
   queryParams.set("account_id", opts.accountId);
+  if (params?.linkedinApi) {
+    queryParams.set("linkedin_api", params.linkedinApi);
+  }
+  if (params?.linkedinSections?.length) {
+    for (const section of params.linkedinSections) {
+      const trimmed = section.trim();
+      if (!trimmed) {
+        continue;
+      }
+      queryParams.append("linkedin_sections", trimmed);
+    }
+  }
 
   const path = `/api/v1/users/${encodeURIComponent(identifier)}?${queryParams.toString()}`;
   return linkedInRequest<LinkedInUserProfile>("GET", path, opts);
+}
+
+async function getUserActivity(
+  opts: LinkedInClientOptions,
+  identifier: string,
+  resource: "posts" | "comments" | "reactions",
+  params?: {
+    limit?: number;
+    cursor?: string;
+    before?: string;
+    after?: string;
+  },
+): Promise<LinkedInUserActivityResponse> {
+  const queryParams = new URLSearchParams();
+  queryParams.set("account_id", opts.accountId);
+  if (params?.limit) {
+    queryParams.set("limit", String(params.limit));
+  }
+  if (params?.cursor) {
+    queryParams.set("cursor", params.cursor);
+  }
+  if (params?.before) {
+    queryParams.set("before", params.before);
+  }
+  if (params?.after) {
+    queryParams.set("after", params.after);
+  }
+  const path = `/api/v1/users/${encodeURIComponent(identifier)}/${resource}?${queryParams.toString()}`;
+  return linkedInRequest<LinkedInUserActivityResponse>("GET", path, opts);
+}
+
+export async function getUserPosts(
+  opts: LinkedInClientOptions,
+  identifier: string,
+  params?: {
+    limit?: number;
+    cursor?: string;
+    before?: string;
+    after?: string;
+  },
+): Promise<LinkedInUserActivityResponse> {
+  return await getUserActivity(opts, identifier, "posts", params);
+}
+
+export async function getUserComments(
+  opts: LinkedInClientOptions,
+  identifier: string,
+  params?: {
+    limit?: number;
+    cursor?: string;
+    before?: string;
+    after?: string;
+  },
+): Promise<LinkedInUserActivityResponse> {
+  return await getUserActivity(opts, identifier, "comments", params);
+}
+
+export async function getUserReactions(
+  opts: LinkedInClientOptions,
+  identifier: string,
+  params?: {
+    limit?: number;
+    cursor?: string;
+    before?: string;
+    after?: string;
+  },
+): Promise<LinkedInUserActivityResponse> {
+  return await getUserActivity(opts, identifier, "reactions", params);
 }
 
 /**

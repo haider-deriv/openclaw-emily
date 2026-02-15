@@ -320,6 +320,91 @@ describe("web_search perplexity baseUrl defaults", () => {
   });
 });
 
+describe("web_search exa provider", () => {
+  const priorFetch = global.fetch;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    // @ts-expect-error global fetch cleanup
+    global.fetch = priorFetch;
+  });
+
+  it("routes requests to Exa with candidate-search parameters", async () => {
+    vi.stubEnv("EXA_API_KEY", "exa-test");
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            requestId: "req-1",
+            searchType: "deep",
+            results: [
+              {
+                title: "Senior Backend Engineer - LinkedIn",
+                url: "https://www.linkedin.com/in/example",
+                summary: "TypeScript backend engineer with 8+ years experience.",
+                publishedDate: "2025-10-18T12:00:00.000Z",
+              },
+            ],
+          }),
+      } as Response),
+    );
+    // @ts-expect-error mock fetch
+    global.fetch = mockFetch;
+
+    const tool = createWebSearchTool({
+      config: { tools: { web: { search: { provider: "exa" } } } },
+      sandboxed: true,
+    });
+    const result = await tool?.execute?.(1, {
+      query: "senior backend engineer san francisco python kubernetes",
+      search_type: "deep",
+      category: "people",
+      include_domains: ["linkedin.com"],
+      country: "US",
+    });
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch.mock.calls[0][0]).toBe("https://api.exa.ai/search");
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({
+      query: "senior backend engineer san francisco python kubernetes",
+      numResults: 5,
+      type: "deep",
+      category: "people",
+      includeDomains: ["linkedin.com"],
+      userLocation: "US",
+    });
+    expect(result?.details).toMatchObject({
+      provider: "exa",
+      count: 1,
+      searchType: "deep",
+      category: "people",
+      requestId: "req-1",
+    });
+  });
+
+  it("rejects non-LinkedIn include_domains for people category", async () => {
+    vi.stubEnv("EXA_API_KEY", "exa-test");
+    const mockFetch = vi.fn();
+    // @ts-expect-error mock fetch
+    global.fetch = mockFetch;
+
+    const tool = createWebSearchTool({
+      config: { tools: { web: { search: { provider: "exa" } } } },
+      sandboxed: true,
+    });
+    const result = await tool?.execute?.(1, {
+      query: "founding engineer",
+      category: "people",
+      include_domains: ["linkedin.com", "github.com"],
+    });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result?.details).toMatchObject({ error: "invalid_exa_people_domains" });
+  });
+});
+
 describe("web_search external content wrapping", () => {
   const priorFetch = global.fetch;
 

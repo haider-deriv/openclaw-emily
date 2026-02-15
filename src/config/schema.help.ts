@@ -79,7 +79,7 @@ export const FIELD_HELP: Record<string, string> = {
     'Text suffix for cross-context markers (supports "{channel}").',
   "tools.message.broadcast.enabled": "Enable broadcast action (default: true).",
   "tools.web.search.enabled": "Enable the web_search tool (requires a provider API key).",
-  "tools.web.search.provider": 'Search provider ("brave" or "perplexity").',
+  "tools.web.search.provider": 'Search provider ("brave", "perplexity", "grok", or "exa").',
   "tools.web.search.apiKey": "Brave Search API key (fallback: BRAVE_API_KEY env var).",
   "tools.web.search.maxResults": "Default number of results to return (1-10).",
   "tools.web.search.timeoutSeconds": "Timeout in seconds for web_search requests.",
@@ -90,6 +90,8 @@ export const FIELD_HELP: Record<string, string> = {
     "Perplexity base URL override (default: https://openrouter.ai/api/v1 or https://api.perplexity.ai).",
   "tools.web.search.perplexity.model":
     'Perplexity model override (default: "perplexity/sonar-pro").',
+  "tools.web.search.exa.apiKey":
+    "Exa API key (fallback: EXA_API_KEY env var, used when provider is exa).",
   "tools.web.fetch.enabled": "Enable the web_fetch tool (lightweight HTTP fetch).",
   "tools.web.fetch.maxChars": "Max characters returned by web_fetch (truncated).",
   "tools.web.fetch.maxCharsCap":
@@ -98,6 +100,32 @@ export const FIELD_HELP: Record<string, string> = {
   "tools.web.fetch.cacheTtlMinutes": "Cache TTL in minutes for web_fetch results.",
   "tools.web.fetch.maxRedirects": "Maximum redirects allowed for web_fetch (default: 3).",
   "tools.web.fetch.userAgent": "Override User-Agent header for web_fetch requests.",
+  "tools.recruiting.enabled": "Enable recruiting pipeline tools (default: false).",
+  "tools.recruiting.store.path":
+    "SQLite path for recruiting state (default: $OPENCLAW_STATE_DIR/recruiting/candidates.sqlite).",
+  "tools.recruiting.identity.minConfidenceForShortlist":
+    "Minimum identity confidence required for shortlist eligibility (default: 0.8).",
+  "tools.recruiting.run.targetCandidatesPerRole":
+    "Target candidates per role per run (default: 300).",
+  "tools.recruiting.run.defaultCadence":
+    "Default daily cadence expression used for scheduling recruiting runs.",
+  "tools.recruiting.browserVerification.enabled":
+    "Enable selective browser verification for high-value ambiguous candidates.",
+  "tools.recruiting.browserVerification.mode":
+    'Browser verification mode ("high_only" or "always").',
+  "tools.recruiting.dailyQuotas.promotedTarget":
+    "Target promoted candidates per day (default: 10).",
+  "tools.recruiting.dailyQuotas.reviewedTarget":
+    "Target reviewed candidates per day (default: 30).",
+  "tools.recruiting.dailyQuotas.verificationBudget":
+    "Max manual verifications per day (default: 20).",
+  "tools.recruiting.promotion.minProofLinks":
+    "Minimum proof links required for manual promotion (default: 2).",
+  "tools.recruiting.promotion.allowUnverifiedPromotion":
+    "Allow promotion without browser verification (default: false).",
+  "tools.recruiting.laneTargeting.g1Percentage":
+    "G1 (high-priority) lane percentage (default: 0.6).",
+  "tools.recruiting.laneTargeting.g2Percentage": "G2 (standard) lane percentage (default: 0.4).",
   "tools.web.fetch.readability":
     "Use Readability to extract main content from HTML (fallbacks to basic HTML cleanup).",
   "tools.web.fetch.firecrawl.enabled": "Enable Firecrawl fallback for web_fetch (if configured).",

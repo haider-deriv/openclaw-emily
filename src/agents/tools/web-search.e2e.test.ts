@@ -36,6 +36,9 @@ const {
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  normalizeExaSearchType,
+  normalizeDomainFilters,
+  validateExaCategoryFilters,
 } = __testing;
 
 describe("web_search perplexity baseUrl defaults", () => {
@@ -241,5 +244,41 @@ describe("web_search grok response parsing", () => {
     const result = extractGrokContent({});
     expect(result.text).toBeUndefined();
     expect(result.annotationCitations).toEqual([]);
+  });
+});
+
+describe("web_search exa parameter normalization", () => {
+  it("accepts supported search_type values", () => {
+    expect(normalizeExaSearchType("auto")).toBe("auto");
+    expect(normalizeExaSearchType("DEEP")).toBe("deep");
+  });
+
+  it("rejects unsupported search_type values", () => {
+    expect(normalizeExaSearchType("turbo")).toBeUndefined();
+  });
+
+  it("normalizes and deduplicates domains", () => {
+    expect(
+      normalizeDomainFilters([
+        "linkedin.com/in",
+        "https://linkedin.com/company/openclaw",
+        "docs.exa.ai",
+      ]),
+    ).toEqual(["linkedin.com", "docs.exa.ai"]);
+  });
+
+  it("validates people category LinkedIn-only include domains", () => {
+    expect(
+      validateExaCategoryFilters({
+        category: "people",
+        includeDomains: ["linkedin.com", "www.linkedin.com"],
+      }),
+    ).toBeNull();
+    expect(
+      validateExaCategoryFilters({
+        category: "people",
+        includeDomains: ["linkedin.com", "github.com"],
+      }),
+    ).toMatchObject({ error: "invalid_exa_people_domains" });
   });
 });

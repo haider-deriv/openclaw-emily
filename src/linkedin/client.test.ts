@@ -4,7 +4,15 @@ import type {
   LinkedInSearchResponse,
   LinkedInSearchParametersResponse,
 } from "./types.js";
-import { normalizeBaseUrl, searchLinkedIn, getSearchParameters } from "./client.js";
+import {
+  normalizeBaseUrl,
+  searchLinkedIn,
+  getSearchParameters,
+  getUserProfile,
+  getUserPosts,
+  getUserComments,
+  getUserReactions,
+} from "./client.js";
 
 describe("normalizeBaseUrl", () => {
   it("adds https:// to bare hostname with port", () => {
@@ -211,5 +219,65 @@ describe("getSearchParameters", () => {
 
     expect(result.items).toHaveLength(2);
     expect(result.items[0].title).toBe("Python");
+  });
+});
+
+describe("user profile and activity endpoints", () => {
+  const mockClientOpts: LinkedInClientOptions = {
+    baseUrl: "https://api1.unipile.com:13111",
+    apiKey: "test-api-key",
+    accountId: "test-account-id",
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({ object: "ok", items: [] })),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("adds linkedin_api and linkedin_sections to profile requests", async () => {
+    await getUserProfile(mockClientOpts, "alice", {
+      linkedinApi: "recruiter",
+      linkedinSections: ["*_preview", "skills"],
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/linkedin_api=recruiter/),
+      expect.any(Object),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("linkedin_sections=*_preview&linkedin_sections=skills"),
+      expect.any(Object),
+    );
+  });
+
+  it("calls posts/comments/reactions endpoints with account_id", async () => {
+    await getUserPosts(mockClientOpts, "alice", { limit: 10 });
+    await getUserComments(mockClientOpts, "alice", { limit: 10 });
+    await getUserReactions(mockClientOpts, "alice", { limit: 10 });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("/users/alice/posts?account_id=test-account-id&limit=10"),
+      expect.any(Object),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/users/alice/comments?account_id=test-account-id&limit=10"),
+      expect.any(Object),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("/users/alice/reactions?account_id=test-account-id&limit=10"),
+      expect.any(Object),
+    );
   });
 });
