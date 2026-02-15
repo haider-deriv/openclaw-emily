@@ -39,7 +39,6 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "linkedin_talent_search",
     "linkedin_candidate_enrich",
     "linkedin_message_connection",
-    "candidate_pipeline",
   ],
   // Nodes + device tools
   "group:nodes": ["nodes"],
@@ -65,7 +64,6 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "linkedin_talent_search",
     "linkedin_candidate_enrich",
     "linkedin_message_connection",
-    "candidate_pipeline",
   ],
 };
 

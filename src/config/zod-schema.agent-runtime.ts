@@ -590,60 +590,6 @@ export const ToolsSchema = z
       })
       .strict()
       .optional(),
-    recruiting: z
-      .object({
-        enabled: z.boolean().optional(),
-        store: z
-          .object({
-            path: z.string().optional(),
-          })
-          .strict()
-          .optional(),
-        identity: z
-          .object({
-            minConfidenceForShortlist: z.number().min(0).max(1).optional(),
-          })
-          .strict()
-          .optional(),
-        run: z
-          .object({
-            targetCandidatesPerRole: z.number().int().positive().optional(),
-            defaultCadence: z.string().optional(),
-          })
-          .strict()
-          .optional(),
-        browserVerification: z
-          .object({
-            enabled: z.boolean().optional(),
-            mode: z.enum(["high_only", "always"]).optional(),
-          })
-          .strict()
-          .optional(),
-        dailyQuotas: z
-          .object({
-            promotedTarget: z.number().int().positive().optional(),
-            reviewedTarget: z.number().int().positive().optional(),
-            verificationBudget: z.number().int().positive().optional(),
-          })
-          .strict()
-          .optional(),
-        promotion: z
-          .object({
-            minProofLinks: z.number().int().positive().optional(),
-            allowUnverifiedPromotion: z.boolean().optional(),
-          })
-          .strict()
-          .optional(),
-        laneTargeting: z
-          .object({
-            g1Percentage: z.number().min(0).max(1).optional(),
-            g2Percentage: z.number().min(0).max(1).optional(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
     elevenlabsAgents: z
       .object({
         enabled: z.boolean().optional(),

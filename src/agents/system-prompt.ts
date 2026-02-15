@@ -231,8 +231,6 @@ export function buildAgentSystemPrompt(params: {
     linkedin_talent_search: "Search LinkedIn talent with advanced filters and pagination",
     linkedin_candidate_enrich: "Enrich a LinkedIn candidate profile with activity evidence",
     linkedin_message_connection: "Find and message an existing LinkedIn connection",
-    candidate_pipeline:
-      "Run recruiting pipeline orchestration (source, enrich, resolve identity, rank)",
     // Channel docking: add login tools here when a channel needs interactive linking.
     browser: "Control web browser",
     canvas: "Present/eval/snapshot the Canvas",
@@ -265,7 +263,6 @@ export function buildAgentSystemPrompt(params: {
     "linkedin_talent_search",
     "linkedin_candidate_enrich",
     "linkedin_message_connection",
-    "candidate_pipeline",
     "browser",
     "canvas",
     "nodes",

@@ -224,14 +224,6 @@ const entries: SubCliEntry[] = [
     },
   },
   {
-    name: "recruiting",
-    description: "Recruiting pipeline",
-    register: async (program) => {
-      const mod = await import("../recruiting-cli.js");
-      mod.registerRecruitingCli(program);
-    },
-  },
-  {
     name: "update",
     description: "CLI update helpers",
     register: async (program) => {
