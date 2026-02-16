@@ -13,6 +13,7 @@ import {
 import { appendCronStyleCurrentTimeLine } from "../agents/current-time.js";
 import { resolveEffectiveMessagesConfig } from "../agents/identity.js";
 import { DEFAULT_HEARTBEAT_FILENAME } from "../agents/workspace.js";
+import { resolveHeartbeatReplyPayload } from "../auto-reply/heartbeat-reply-payload.js";
 import {
   DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
   DEFAULT_HEARTBEAT_EVERY,
@@ -59,7 +60,7 @@ import {
   resolveHeartbeatDeliveryTarget,
   resolveHeartbeatSenderContext,
 } from "./outbound/targets.js";
-import { peekSystemEvents } from "./system-events.js";
+import { peekSystemEventEntries } from "./system-events.js";
 
 type HeartbeatDeps = OutboundSendDeps &
   ChannelHeartbeatDeps & {
@@ -315,27 +316,6 @@ function resolveHeartbeatSession(
   return { sessionKey: mainSessionKey, storePath, store, entry: mainEntry };
 }
 
-function resolveHeartbeatReplyPayload(
-  replyResult: ReplyPayload | ReplyPayload[] | undefined,
-): ReplyPayload | undefined {
-  if (!replyResult) {
-    return undefined;
-  }
-  if (!Array.isArray(replyResult)) {
-    return replyResult;
-  }
-  for (let idx = replyResult.length - 1; idx >= 0; idx -= 1) {
-    const payload = replyResult[idx];
-    if (!payload) {
-      continue;
-    }
-    if (payload.text || payload.mediaUrl || (payload.mediaUrls && payload.mediaUrls.length > 0)) {
-      return payload;
-    }
-  }
-  return undefined;
-}
-
 function resolveHeartbeatReasoningPayloads(
   replyResult: ReplyPayload | ReplyPayload[] | undefined,
 ): ReplyPayload[] {
@@ -502,6 +482,23 @@ export async function runHeartbeatOnce(opts: {
   const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
   const hasCronEvents = isCronEvent && cronEvents.length > 0;
   const hasElevenLabsEvents = isElevenLabsEvent && pendingEvents.length > 0;
+  const pendingEventEntries = peekSystemEventEntries(sessionKey);
+  const hasTaggedCronEvents = pendingEventEntries.some((event) =>
+    event.contextKey?.startsWith("cron:"),
+  );
+  const shouldInspectPendingEvents = isExecEvent || isCronEventReason || hasTaggedCronEvents;
+  const pendingEvents = shouldInspectPendingEvents
+    ? pendingEventEntries.map((event) => event.text)
+    : [];
+  const cronEvents = pendingEventEntries
+    .filter(
+      (event) =>
+        (isCronEventReason || event.contextKey?.startsWith("cron:")) &&
+        isCronSystemEvent(event.text),
+    )
+    .map((event) => event.text);
+  const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
+  const hasCronEvents = cronEvents.length > 0;
   const prompt = hasExecCompletion
     ? EXEC_EVENT_PROMPT
     : hasCronEvents
@@ -558,6 +555,7 @@ export async function runHeartbeatOnce(opts: {
       to: delivery.to,
       accountId: delivery.accountId,
       payloads: [{ text: heartbeatOkText }],
+      agentId,
       deps: opts.deps,
     });
     return true;
@@ -736,6 +734,7 @@ export async function runHeartbeatOnce(opts: {
       channel: delivery.channel,
       to: delivery.to,
       accountId: deliveryAccountId,
+      agentId,
       payloads: [
         ...reasoningPayloads,
         ...(shouldSkipMain

@@ -35,7 +35,6 @@ import { buildPairingReply } from "../../../pairing/pairing-messages.js";
 import { upsertChannelPairingRequest } from "../../../pairing/pairing-store.js";
 import { resolveAgentRoute } from "../../../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../../../routing/session-key.js";
-import { buildUntrustedChannelMetadata } from "../../../security/channel-metadata.js";
 import { reactSlackMessage } from "../../actions.js";
 import { sendMessageSlack } from "../../send.js";
 import { resolveSlackThreadContext } from "../../threading.js";
@@ -49,6 +48,7 @@ import {
   resolveSlackThreadHistory,
   resolveSlackThreadStarter,
 } from "../media.js";
+import { resolveSlackRoomContextHints } from "../room-context.js";
 
 export async function prepareSlackMessage(params: {
   ctx: SlackMonitorContext;
@@ -348,7 +348,10 @@ export async function prepareSlackMessage(params: {
     return null;
   }
 
-  const ackReaction = resolveAckReaction(cfg, route.agentId);
+  const ackReaction = resolveAckReaction(cfg, route.agentId, {
+    channel: "slack",
+    accountId: account.accountId,
+  });
   const ackReactionValue = ackReaction ?? "";
 
   const shouldAckReaction = () =>
@@ -452,18 +455,11 @@ export async function prepareSlackMessage(params: {
 
   const slackTo = isDirectMessage ? `user:${message.user}` : `channel:${message.channel}`;
 
-  const untrustedChannelMetadata = isRoomish
-    ? buildUntrustedChannelMetadata({
-        source: "slack",
-        label: "Slack channel description",
-        entries: [channelInfo?.topic, channelInfo?.purpose],
-      })
-    : undefined;
-  const systemPromptParts = [channelConfig?.systemPrompt?.trim() || null].filter(
-    (entry): entry is string => Boolean(entry),
-  );
-  const groupSystemPrompt =
-    systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
+  const { untrustedChannelMetadata, groupSystemPrompt } = resolveSlackRoomContextHints({
+    isRoomish,
+    channelInfo,
+    channelConfig,
+  });
 
   let threadStarterBody: string | undefined;
   let threadHistoryBody: string | undefined;
@@ -561,9 +557,6 @@ export async function prepareSlackMessage(params: {
   // Use thread starter media if current message has none
   const effectiveMedia = media ?? threadStarterMedia;
   const firstMedia = effectiveMedia?.[0];
-  const firstMediaType = firstMedia
-    ? (firstMedia.contentType ?? "application/octet-stream")
-    : undefined;
 
   const inboundHistory =
     isRoomish && ctx.historyLimit > 0
@@ -606,7 +599,7 @@ export async function prepareSlackMessage(params: {
     Timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
     WasMentioned: isRoomish ? effectiveWasMentioned : undefined,
     MediaPath: firstMedia?.path,
-    MediaType: firstMediaType,
+    MediaType: firstMedia?.contentType,
     MediaUrl: firstMedia?.path,
     MediaPaths:
       effectiveMedia && effectiveMedia.length > 0 ? effectiveMedia.map((m) => m.path) : undefined,
@@ -614,7 +607,7 @@ export async function prepareSlackMessage(params: {
       effectiveMedia && effectiveMedia.length > 0 ? effectiveMedia.map((m) => m.path) : undefined,
     MediaTypes:
       effectiveMedia && effectiveMedia.length > 0
-        ? effectiveMedia.map((m) => m.contentType ?? "application/octet-stream")
+        ? effectiveMedia.map((m) => m.contentType ?? "")
         : undefined,
     CommandAuthorized: commandAuthorized,
     OriginatingChannel: "slack" as const,
