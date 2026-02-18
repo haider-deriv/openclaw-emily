@@ -750,6 +750,15 @@ export const ToolsSchema = z
       })
       .strict()
       .optional(),
+    talentlyInterview: z
+      .object({
+        enabled: z.boolean().optional(),
+        apiUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

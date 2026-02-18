@@ -8,6 +8,7 @@ import {
 } from "../linkedin/tool.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { createTalentlyCVAnalysisTool } from "../talently-cv-analysis/tool.js";
+import { createTalentlyInterviewTool } from "../talently-interview/tool.js";
 import { createTalentlyTool } from "../talently/tool.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
@@ -221,6 +222,14 @@ export function createOpenClawTools(options?: {
   });
   if (talentlyCVAnalysisTool) {
     tools.push(talentlyCVAnalysisTool);
+  }
+
+  // Talently Interview tool
+  const talentlyInterviewTool = createTalentlyInterviewTool({
+    config: options?.config,
+  });
+  if (talentlyInterviewTool) {
+    tools.push(talentlyInterviewTool);
   }
 
   const pluginTools = resolvePluginTools({
