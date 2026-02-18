@@ -98,6 +98,7 @@ export {
   createLinkedInTalentSearchTool,
   createLinkedInCandidateEnrichTool,
   createLinkedInMessageConnectionTool,
+  createLinkedInInMailCandidateTool,
   isLinkedInTalentSearchAvailable,
   getLinkedInTalentSearchStatus,
 } from "./tool.js";

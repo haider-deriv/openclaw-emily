@@ -5,16 +5,15 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../agents/tools/common.js";
-import type { OpenClawConfig } from "../config/config.js";
-import type { LinkedInCompanyScope, LinkedInPriority, LinkedInRoleScope } from "./types.js";
 import { optionalStringEnum, stringEnum } from "../agents/schema/typebox.js";
+import type { AnyAgentTool } from "../agents/tools/common.js";
 import {
   jsonResult,
   readNumberParam,
   readStringArrayParam,
   readStringParam,
 } from "../agents/tools/common.js";
+import type { OpenClawConfig } from "../config/config.js";
 import { resolveLinkedInAccount, buildClientOptions, getMissingCredentials } from "./accounts.js";
 import {
   listConnections,
@@ -27,6 +26,7 @@ import {
   type LinkedInConnection,
 } from "./client.js";
 import { searchTalent, formatSearchResultsText } from "./search.js";
+import type { LinkedInCompanyScope, LinkedInPriority, LinkedInRoleScope } from "./types.js";
 
 const LINKEDIN_API_VALUES = ["classic", "recruiter", "sales_navigator"] as const;
 const LINKEDIN_PRIORITY_VALUES = ["MUST_HAVE", "CAN_HAVE", "DOESNT_HAVE"] as const;
@@ -1046,5 +1046,204 @@ export function getLinkedInTalentSearchStatus(cfg: OpenClawConfig): {
     enabled: account.enabled,
     configured: clientOpts !== undefined,
     missing,
+  };
+}
+
+// =============================================================================
+// LinkedIn InMail Candidate Tool
+// =============================================================================
+
+const LinkedInInMailCandidateSchema = Type.Object({
+  identifier: Type.String({
+    description:
+      "LinkedIn identifier of the candidate: provider_id, member_urn, member_id, or public_identifier " +
+      "from search results. This is the person you want to message.",
+  }),
+  message: Type.String({
+    description: "The message body to send to the candidate.",
+  }),
+  subject: Type.Optional(
+    Type.String({
+      description:
+        "Optional subject line for the InMail message. Recommended for better open rates.",
+    }),
+  ),
+  api: optionalStringEnum(LINKEDIN_API_VALUES, {
+    description:
+      "LinkedIn API mode to use: 'recruiter' for LinkedIn Recruiter, 'sales_navigator' for Sales Navigator, " +
+      "or 'classic' for regular LinkedIn with InMail credits. Default: recruiter.",
+  }),
+  hiring_project_id: Type.Optional(
+    Type.String({
+      description:
+        "Optional LinkedIn Recruiter hiring project ID to associate the message with a job/project.",
+    }),
+  ),
+  job_posting_id: Type.Optional(
+    Type.String({
+      description: "Optional LinkedIn Recruiter job posting ID to reference in the message.",
+    }),
+  ),
+  visibility: Type.Optional(
+    Type.Union([Type.Literal("PUBLIC"), Type.Literal("PRIVATE"), Type.Literal("PROJECT")], {
+      description:
+        "Message visibility for Recruiter: PUBLIC (visible to all recruiters), " +
+        "PRIVATE (only you), or PROJECT (project members). Default: PRIVATE.",
+    }),
+  ),
+  account_id: Type.Optional(
+    Type.String({
+      description: "Account ID for multi-account setups.",
+    }),
+  ),
+});
+
+/**
+ * Create the LinkedIn InMail candidate tool.
+ * This tool sends InMail messages to candidates who are not connections,
+ * using the Recruiter API, Sales Navigator API, or classic InMail.
+ */
+export function createLinkedInInMailCandidateTool(options?: {
+  config?: OpenClawConfig;
+}): AnyAgentTool | null {
+  const cfg = options?.config;
+
+  const account = resolveLinkedInAccount({ cfg: cfg ?? ({} as OpenClawConfig) });
+  if (!account.enabled) {
+    return null;
+  }
+
+  return {
+    label: "LinkedIn InMail Candidate",
+    name: "linkedin_inmail_candidate",
+    description:
+      "Send an InMail message to a LinkedIn candidate who is NOT a 1st-degree connection. " +
+      "Use this for outreach to 2nd/3rd degree connections or out-of-network candidates found via search. " +
+      "Requires LinkedIn Recruiter, Sales Navigator, or Premium account with InMail credits. " +
+      "For 1st-degree connections, use linkedin_message_connection instead.",
+    parameters: LinkedInInMailCandidateSchema,
+    execute: async (_toolCallId, args) => {
+      const params = args as Record<string, unknown>;
+
+      const identifier = readStringParam(params, "identifier");
+      const message = readStringParam(params, "message");
+      const subject = readStringParam(params, "subject");
+      const api = parseLinkedInApi(params.api) ?? "recruiter";
+      const hiringProjectId = readStringParam(params, "hiring_project_id");
+      const jobPostingId = readStringParam(params, "job_posting_id");
+      const visibility = params.visibility as "PUBLIC" | "PRIVATE" | "PROJECT" | undefined;
+      const accountId = readStringParam(params, "account_id");
+
+      if (!identifier) {
+        return jsonResult({
+          success: false,
+          error:
+            "Identifier is required. Use the provider_id, member_id, member_urn, or public_identifier " +
+            "from linkedin_talent_search results.",
+        });
+      }
+
+      if (!message) {
+        return jsonResult({
+          success: false,
+          error: "Message is required.",
+        });
+      }
+
+      const resolvedAccount = accountId
+        ? resolveLinkedInAccount({ cfg: cfg ?? ({} as OpenClawConfig), accountId })
+        : account;
+
+      const opts = buildClientOptions(resolvedAccount);
+      if (!opts) {
+        const missing = getMissingCredentials(resolvedAccount);
+        return jsonResult({
+          success: false,
+          error: `LinkedIn is not configured. Missing: ${missing.join(", ")}`,
+        });
+      }
+
+      try {
+        // Build LinkedIn options for InMail
+        const linkedinOptions: {
+          api: "classic" | "recruiter" | "sales_navigator";
+          inmail: boolean;
+          hiring_project_id?: string;
+          job_posting_id?: string;
+          visibility?: "PUBLIC" | "PRIVATE" | "PROJECT";
+        } = {
+          api,
+          inmail: true,
+        };
+
+        // Add recruiter-specific options if provided
+        if (hiringProjectId) {
+          linkedinOptions.hiring_project_id = hiringProjectId;
+        }
+        if (jobPostingId) {
+          linkedinOptions.job_posting_id = jobPostingId;
+        }
+        if (visibility) {
+          linkedinOptions.visibility = visibility;
+        }
+
+        // Send InMail via startChat
+        const chatResponse = await startChat(opts, {
+          attendees_ids: [identifier],
+          text: message,
+          subject,
+          linkedin: linkedinOptions,
+        });
+
+        return jsonResult({
+          success: true,
+          inmail_sent: true,
+          api,
+          recipient_identifier: identifier,
+          subject: subject ?? null,
+          chat_id: chatResponse.chat_id,
+          message_id: chatResponse.message_id,
+          linkedin_options: {
+            api,
+            inmail: true,
+            hiring_project_id: hiringProjectId ?? null,
+            job_posting_id: jobPostingId ?? null,
+            visibility: visibility ?? null,
+          },
+        });
+      } catch (err) {
+        const classified = classifyLinkedInError(err);
+
+        // Provide more specific error messages for common InMail issues
+        let errorDetail = classified.userFriendlyMessage;
+        if (
+          classified.type === "api" &&
+          (classified.message.includes("inmail") ||
+            classified.message.includes("InMail") ||
+            classified.message.includes("credit"))
+        ) {
+          errorDetail =
+            "InMail could not be sent. This may be due to: " +
+            "1) No InMail credits available, " +
+            "2) The candidate has disabled InMail, " +
+            "3) The account type doesn't support InMail (need Recruiter/Sales Navigator/Premium), or " +
+            "4) Rate limiting. Original error: " +
+            classified.message;
+        }
+
+        return jsonResult({
+          success: false,
+          error: errorDetail,
+          errorType: classified.type,
+          canRetry: classified.isTransient,
+          suggestion:
+            classified.type === "auth"
+              ? "Check that your LinkedIn account has Recruiter, Sales Navigator, or Premium subscription."
+              : classified.type === "rate_limit"
+                ? "Wait a few minutes and try again."
+                : "Verify the candidate identifier is correct and try again.",
+        });
+      }
+    },
   };
 }

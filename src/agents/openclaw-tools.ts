@@ -4,6 +4,7 @@ import {
   createLinkedInTalentSearchTool,
   createLinkedInCandidateEnrichTool,
   createLinkedInMessageConnectionTool,
+  createLinkedInInMailCandidateTool,
 } from "../linkedin/tool.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { createTalentlyCVAnalysisTool } from "../talently-cv-analysis/tool.js";
@@ -188,6 +189,13 @@ export function createOpenClawTools(options?: {
   });
   if (linkedInMessageTool) {
     tools.push(linkedInMessageTool);
+  }
+
+  const linkedInInMailTool = createLinkedInInMailCandidateTool({
+    config: options?.config,
+  });
+  if (linkedInInMailTool) {
+    tools.push(linkedInInMailTool);
   }
 
   // ElevenLabs Agents tool
