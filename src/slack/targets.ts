@@ -1,6 +1,8 @@
 import {
   buildMessagingTarget,
   ensureTargetId,
+  parseTargetMention,
+  parseTargetPrefixes,
   requireTargetKind,
   type MessagingTarget,
   type MessagingTargetKind,
@@ -39,28 +41,24 @@ export function parseSlackTarget(
   }
   const strict = options.strict !== false; // Default to strict mode for backward compatibility
 
-  // User mention format: <@U123ABC>
-  const mentionMatch = trimmed.match(/^<@([A-Z0-9]+)>$/i);
-  if (mentionMatch) {
-    return buildMessagingTarget("user", mentionMatch[1], trimmed);
+  const mentionTarget = parseTargetMention({
+    raw: trimmed,
+    mentionPattern: /^<@([A-Z0-9]+)>$/i,
+    kind: "user",
+  });
+  if (mentionTarget) {
+    return mentionTarget;
   }
-
-  // Explicit user ID format: user:U123ABC
-  if (trimmed.startsWith("user:")) {
-    const id = trimmed.slice("user:".length).trim();
-    return id ? buildMessagingTarget("user", id, trimmed) : undefined;
-  }
-
-  // Explicit channel ID format: channel:C123ABC
-  if (trimmed.startsWith("channel:")) {
-    const id = trimmed.slice("channel:".length).trim();
-    return id ? buildMessagingTarget("channel", id, trimmed) : undefined;
-  }
-
-  // Slack user ID format: slack:U123ABC
-  if (trimmed.startsWith("slack:")) {
-    const id = trimmed.slice("slack:".length).trim();
-    return id ? buildMessagingTarget("user", id, trimmed) : undefined;
+  const prefixedTarget = parseTargetPrefixes({
+    raw: trimmed,
+    prefixes: [
+      { prefix: "user:", kind: "user" },
+      { prefix: "channel:", kind: "channel" },
+      { prefix: "slack:", kind: "user" },
+    ],
+  });
+  if (prefixedTarget) {
+    return prefixedTarget;
   }
 
   // @ format: could be @U123ABC (ID) or @username (name)
