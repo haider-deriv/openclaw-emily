@@ -6,12 +6,6 @@
  */
 
 import type { OpenClawConfig } from "../config/config.js";
-import type {
-  LinkedInChat,
-  LinkedInClientOptions,
-  LinkedInMessage,
-  LinkedInWebhookPayload,
-} from "./types.js";
 import {
   listChats,
   getMessages,
@@ -19,6 +13,12 @@ import {
   getUserProfile,
   classifyLinkedInError,
 } from "./client.js";
+import type {
+  LinkedInChat,
+  LinkedInClientOptions,
+  LinkedInMessage,
+  LinkedInWebhookPayload,
+} from "./types.js";
 
 export interface LinkedInPollingConfig {
   clientOpts: LinkedInClientOptions;
@@ -71,12 +71,12 @@ async function resolveSenderName(
     const newCache = new Map<string, string>();
     for (const attendee of response.items) {
       log?.(
-        `[LINKEDIN POLLING] Attendee: id=${attendee.id}, provider_id=${attendee.provider_id}, display_name=${attendee.display_name}, is_self=${attendee.is_self}`,
+        `[LINKEDIN POLLING] Attendee: id=${attendee.id}, provider_id=${attendee.provider_id}, name=${attendee.name}, is_self=${attendee.is_self}`,
       );
-      if (attendee.display_name) {
+      if (attendee.name) {
         // Map id, provider_id to the name for flexible matching
-        newCache.set(attendee.id, attendee.display_name);
-        newCache.set(attendee.provider_id, attendee.display_name);
+        newCache.set(attendee.id, attendee.name);
+        newCache.set(attendee.provider_id, attendee.name);
       }
     }
     attendeeCache.set(chatId, newCache);
@@ -88,9 +88,9 @@ async function resolveSenderName(
     // Try to find the sender name using either ID
     let name = newCache.get(senderAttendeeId) ?? newCache.get(senderId);
 
-    // If display_name was undefined, try fetching the user profile
+    // If name was not found, try fetching the user profile
     if (!name) {
-      log?.(`[LINKEDIN POLLING] display_name not found, fetching user profile for ${senderId}`);
+      log?.(`[LINKEDIN POLLING] name not found, fetching user profile for ${senderId}`);
       try {
         const profile = await getUserProfile(clientOpts, senderId);
         if (profile.first_name || profile.last_name) {

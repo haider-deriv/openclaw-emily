@@ -480,11 +480,20 @@ export type LinkedInChatAttendee = {
   id: string;
   account_id: string;
   provider_id: string;
-  display_name: string | null;
+  name: string;
   is_self: 0 | 1;
-  is_member: 0 | 1;
+  hidden?: 0 | 1;
   picture_url?: string;
   profile_url?: string;
+  specifics?: {
+    provider: "LINKEDIN";
+    member_urn?: string;
+    occupation?: string;
+    network_distance?: "SELF" | "DISTANCE_1" | "DISTANCE_2" | "DISTANCE_3" | "OUT_OF_NETWORK";
+    pending_invitation?: boolean;
+    location?: string;
+    headline?: string;
+  };
 };
 
 // Chat attendees list response

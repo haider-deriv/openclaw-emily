@@ -52,6 +52,12 @@ export type SendInterviewInviteParams = {
   conversationId?: string;
   /** Email template type (default: INTERVIEW_CONFIRMATION) */
   templateType?: EmailTemplateType;
+  /** Zoom/meeting link to include in the email */
+  meetingLink?: string;
+  /** Meeting passcode to include in the email */
+  meetingPasscode?: string;
+  /** Skip calendar creation (e.g., when Talently already created it) */
+  skipCalendar?: boolean;
 };
 
 export type SendInterviewInviteResult = {
@@ -137,6 +143,8 @@ function buildEmailHtml(
     candidateName: string;
     interviewDate: string;
     interviewTime: string;
+    meetingLink?: string;
+    meetingPasscode?: string;
   },
 ): string {
   const templateFile =
@@ -150,14 +158,26 @@ function buildEmailHtml(
     // Fallback to inline template if file not found
     template = `<p>Hi {{candidate_name}},</p>
 <p>Your interview has been scheduled for <strong>{{interview_date}}</strong> at <strong>{{interview_time}}</strong>.</p>
-<p>You will receive a calendar invite shortly with the meeting details.</p>
+{{meeting_details}}
+<p>You will also receive a calendar invite with these details.</p>
 <p>Best regards,<br>The Team</p>`;
+  }
+
+  // Build meeting details block
+  let meetingDetails = "";
+  if (params.meetingLink) {
+    meetingDetails = `<p><strong>Join the meeting:</strong><br /><a href="${params.meetingLink}">${params.meetingLink}</a>`;
+    if (params.meetingPasscode) {
+      meetingDetails += `<br />Passcode: ${params.meetingPasscode}`;
+    }
+    meetingDetails += "</p>";
   }
 
   return template
     .replace(/\{\{candidate_name\}\}/g, params.candidateName)
     .replace(/\{\{interview_date\}\}/g, params.interviewDate)
-    .replace(/\{\{interview_time\}\}/g, params.interviewTime);
+    .replace(/\{\{interview_time\}\}/g, params.interviewTime)
+    .replace(/\{\{meeting_details\}\}/g, meetingDetails);
 }
 
 /**
@@ -247,6 +267,9 @@ export async function sendInterviewInvite(
     calendarId,
     conversationId,
     templateType = EmailTemplateType.INTERVIEW_CONFIRMATION,
+    meetingLink,
+    meetingPasscode,
+    skipCalendar = false,
   } = params;
 
   let calendarEventCreated = false;
@@ -254,8 +277,8 @@ export async function sendInterviewInvite(
   let interviewDate = "";
   let interviewTime = "";
 
-  // 1. Create calendar event (only if timestamp provided)
-  if (interviewTimestamp) {
+  // 1. Create calendar event (only if timestamp provided and not skipped)
+  if (interviewTimestamp && !skipCalendar) {
     const startDate = new Date(interviewTimestamp);
     if (isNaN(startDate.getTime())) {
       log.warn(`Invalid interview timestamp: ${interviewTimestamp}, skipping calendar`);
@@ -266,9 +289,15 @@ export async function sendInterviewInvite(
       interviewTime = formatted.time;
 
       const eventSummary = `Interview with ${candidateName}`;
-      const eventDescription = conversationId
+      let eventDescription = conversationId
         ? `Scheduled from ElevenLabs conversation: ${conversationId}`
         : "Scheduled interview";
+      if (meetingLink) {
+        eventDescription += `\n\nJoin meeting: ${meetingLink}`;
+        if (meetingPasscode) {
+          eventDescription += `\nPasscode: ${meetingPasscode}`;
+        }
+      }
 
       const calendarArgs = [
         "calendar",
@@ -297,6 +326,18 @@ export async function sendInterviewInvite(
         log.warn(`Failed to create calendar event: ${calendarResult.error}`);
       }
     }
+  } else if (interviewTimestamp) {
+    // Still compute display dates even if skipping calendar (for email template)
+    const startDate = new Date(interviewTimestamp);
+    if (!isNaN(startDate.getTime())) {
+      const formatted = formatDateForEmail(startDate);
+      interviewDate = formatted.date;
+      interviewTime = formatted.time;
+    }
+    if (skipCalendar) {
+      calendarEventCreated = true; // Talently already created it
+      log.info(`Skipping gog calendar creation (handled by Talently API)`);
+    }
   } else {
     log.info(`No interview timestamp provided, skipping calendar invite`);
   }
@@ -306,6 +347,8 @@ export async function sendInterviewInvite(
     candidateName,
     interviewDate,
     interviewTime,
+    meetingLink,
+    meetingPasscode,
   });
 
   // Use different subject based on whether we have a scheduled date

@@ -594,4 +594,17 @@ export type ToolsConfig = {
     /** Request timeout in milliseconds. Default: 120000. */
     timeoutMs?: number;
   };
+  /** Talently Interview tool configuration. */
+  talentlyInterview?: {
+    /** Enable Talently Interview tool (default: true when apiUrl is present). */
+    enabled?: boolean;
+    /** URL of the Interview API (e.g., "https://skillssue.example.com/api"). */
+    apiUrl?: string;
+    /** API key for authentication. */
+    apiKey?: string;
+    /** Request timeout in milliseconds. Default: 60000. */
+    timeoutMs?: number;
+    /** List of interviewer emails that can be used for scheduling interviews. */
+    interviewerEmails?: string[];
+  };
 };

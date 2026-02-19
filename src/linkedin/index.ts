@@ -57,6 +57,7 @@ export {
   checkLinkedInConnection,
   // Client functions - Messaging
   listChats,
+  getChat,
   getMessages,
   getChatAttendees,
   sendMessage,
@@ -99,6 +100,8 @@ export {
   createLinkedInCandidateEnrichTool,
   createLinkedInMessageConnectionTool,
   createLinkedInInMailCandidateTool,
+  createLinkedInListConversationsTool,
+  createLinkedInGetConversationMessagesTool,
   isLinkedInTalentSearchAvailable,
   getLinkedInTalentSearchStatus,
 } from "./tool.js";
