@@ -24,6 +24,7 @@ import {
   getUserComments,
   getUserReactions,
   listChats,
+  getChat,
   getMessages,
   getChatAttendees,
   type LinkedInConnection,
@@ -1344,53 +1345,81 @@ export function createLinkedInListConversationsTool(options?: {
           chat_type: string;
         }> = [];
 
-        // Fetch attendees for each chat and filter by name if needed
+        // Process chats - use chat.name for DMs (faster and more reliable than getChatAttendees)
         for (const chat of chatsResponse.items) {
           if (conversations.length >= limit) {
             break;
           }
 
-          try {
-            const attendeesResponse = await getChatAttendees(opts, chat.id, { limit: 10 });
+          // For direct messages, use the chat's name and attendee_provider_id
+          // These are populated directly on the chat object
+          let attendeeName = chat.name || null;
+          let attendeeId = chat.attendee_provider_id || null;
 
-            // Filter out self from attendees
-            const otherAttendees = attendeesResponse.items
-              .filter((a) => a.is_self !== 1)
-              .map((a) => ({
-                id: a.provider_id,
-                name: a.display_name || "Unknown",
-                profile_url: a.profile_url,
-              }));
-
-            // If name filter is provided, check if any attendee matches
-            if (nameFilter) {
-              const lowerFilter = nameFilter.toLowerCase();
-              const matches = otherAttendees.some((a) =>
-                a.name.toLowerCase().includes(lowerFilter),
-              );
-              if (!matches) {
-                continue;
+          // If chat.name is empty, try to get attendees from API as fallback
+          if (!attendeeName && chat.type === 0) {
+            try {
+              const attendeesResponse = await getChatAttendees(opts, chat.id, { limit: 5 });
+              const otherAttendee = attendeesResponse.items.find((a) => a.is_self !== 1);
+              if (otherAttendee) {
+                attendeeName = otherAttendee.display_name || null;
+                attendeeId = attendeeId || otherAttendee.provider_id;
               }
+            } catch {
+              // Continue with null name
             }
-
-            const isInmail =
-              chat.content_type === "inmail" ||
-              (chat.folder?.some((f) => f.includes("RECRUITER") || f.includes("SALES_NAVIGATOR")) ??
-                false);
-
-            conversations.push({
-              chat_id: chat.id,
-              attendees: otherAttendees,
-              last_message_at: chat.timestamp,
-              unread_count: chat.unread_count,
-              is_inmail: isInmail,
-              subject: chat.subject ?? null,
-              chat_type: chat.type === 0 ? "direct" : chat.type === 1 ? "group" : "channel",
-            });
-          } catch {
-            // Skip chats where we can't fetch attendees
-            continue;
           }
+
+          // Build attendee list
+          const attendees: Array<{ id: string; name: string; profile_url?: string }> = [];
+          if (attendeeName || attendeeId) {
+            attendees.push({
+              id: attendeeId || "unknown",
+              name: attendeeName || "Unknown",
+            });
+          }
+
+          // For group chats, we need to fetch attendees
+          if (chat.type !== 0 && attendees.length === 0) {
+            try {
+              const attendeesResponse = await getChatAttendees(opts, chat.id, { limit: 10 });
+              for (const a of attendeesResponse.items) {
+                if (a.is_self !== 1) {
+                  attendees.push({
+                    id: a.provider_id,
+                    name: a.display_name || "Unknown",
+                    profile_url: a.profile_url,
+                  });
+                }
+              }
+            } catch {
+              // Continue with empty attendees
+            }
+          }
+
+          // If name filter is provided, check if any attendee matches
+          if (nameFilter) {
+            const lowerFilter = nameFilter.toLowerCase();
+            const matches = attendees.some((a) => a.name.toLowerCase().includes(lowerFilter));
+            if (!matches) {
+              continue;
+            }
+          }
+
+          const isInmail =
+            chat.content_type === "inmail" ||
+            (chat.folder?.some((f) => f.includes("RECRUITER") || f.includes("SALES_NAVIGATOR")) ??
+              false);
+
+          conversations.push({
+            chat_id: chat.id,
+            attendees,
+            last_message_at: chat.timestamp,
+            unread_count: chat.unread_count,
+            is_inmail: isInmail,
+            subject: chat.subject ?? null,
+            chat_type: chat.type === 0 ? "direct" : chat.type === 1 ? "group" : "channel",
+          });
         }
 
         if (conversations.length === 0 && nameFilter) {
@@ -1514,19 +1543,46 @@ export function createLinkedInGetConversationMessagesTool(options?: {
       }
 
       try {
-        // Fetch messages and attendees in parallel
-        const [messagesResponse, attendeesResponse] = await Promise.all([
+        // Fetch messages, attendees, and chat info in parallel
+        const [messagesResponse, attendeesResponse, chatInfo] = await Promise.all([
           getMessages(opts, chatId, { limit, cursor }),
           getChatAttendees(opts, chatId, { limit: 20 }),
+          getChat(opts, chatId).catch(() => null),
         ]);
 
-        // Build attendee lookup map
+        // Build attendee lookup map from getChatAttendees
         const attendeeMap = new Map<string, { name: string; profile_url?: string }>();
         for (const attendee of attendeesResponse.items) {
           attendeeMap.set(attendee.provider_id, {
             name: attendee.display_name || "Unknown",
             profile_url: attendee.profile_url,
           });
+        }
+
+        // Use chat.name as fallback for the other attendee's name (for DMs)
+        // This is more reliable than getChatAttendees which may return null display_name
+        const chatName = chatInfo?.name || null;
+        const chatAttendeeProviderId = chatInfo?.attendee_provider_id || null;
+        if (chatName && chatAttendeeProviderId) {
+          const existing = attendeeMap.get(chatAttendeeProviderId);
+          if (!existing || existing.name === "Unknown") {
+            attendeeMap.set(chatAttendeeProviderId, {
+              name: chatName,
+              profile_url: existing?.profile_url,
+            });
+          }
+        }
+
+        // If all non-self attendees are "Unknown" but chat.name exists, apply to first non-self
+        if (chatName) {
+          for (const attendee of attendeesResponse.items) {
+            if (attendee.is_self !== 1) {
+              const entry = attendeeMap.get(attendee.provider_id);
+              if (entry && entry.name === "Unknown") {
+                entry.name = chatName;
+              }
+            }
+          }
         }
 
         // Format messages
@@ -1536,7 +1592,8 @@ export function createLinkedInGetConversationMessagesTool(options?: {
             id: msg.id,
             text: msg.text,
             sender_id: msg.sender_id,
-            sender_name: senderInfo?.name ?? "Unknown",
+            sender_name:
+              senderInfo?.name ?? (msg.is_sender === 1 ? "You" : (chatName ?? "Unknown")),
             timestamp: msg.timestamp,
             is_sender: msg.is_sender === 1,
             message_type: msg.message_type ?? "MESSAGE",
@@ -1548,11 +1605,14 @@ export function createLinkedInGetConversationMessagesTool(options?: {
         // Build attendee list (excluding self)
         const attendees = attendeesResponse.items
           .filter((a) => a.is_self !== 1)
-          .map((a) => ({
-            id: a.provider_id,
-            name: a.display_name || "Unknown",
-            profile_url: a.profile_url,
-          }));
+          .map((a) => {
+            const info = attendeeMap.get(a.provider_id);
+            return {
+              id: a.provider_id,
+              name: info?.name || chatName || "Unknown",
+              profile_url: info?.profile_url || a.profile_url,
+            };
+          });
 
         // Format for display
         const formatted = messages

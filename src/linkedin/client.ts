@@ -12,6 +12,7 @@ import type {
   LinkedInSearchRequestBody,
   LinkedInSearchResponse,
   // Messaging types
+  LinkedInChat,
   LinkedInChatListResponse,
   LinkedInMessageListResponse,
   LinkedInChatAttendeesResponse,
@@ -380,6 +381,15 @@ export async function listChats(
 
   const path = `/api/v1/chats?${queryParams.toString()}`;
   return linkedInRequest<LinkedInChatListResponse>("GET", path, opts);
+}
+
+/**
+ * Get a single chat by ID.
+ * GET /api/v1/chats/{chat_id}
+ */
+export async function getChat(opts: LinkedInClientOptions, chatId: string): Promise<LinkedInChat> {
+  const path = `/api/v1/chats/${encodeURIComponent(chatId)}`;
+  return linkedInRequest<LinkedInChat>("GET", path, opts);
 }
 
 /**

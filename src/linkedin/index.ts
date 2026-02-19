@@ -57,6 +57,7 @@ export {
   checkLinkedInConnection,
   // Client functions - Messaging
   listChats,
+  getChat,
   getMessages,
   getChatAttendees,
   sendMessage,
