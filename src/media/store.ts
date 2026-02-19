@@ -12,7 +12,7 @@ import { detectMime, extensionForMime } from "./mime.js";
 const resolveMediaDir = () => path.join(resolveConfigDir(), "media");
 export const MEDIA_MAX_BYTES = 5 * 1024 * 1024; // 5MB default
 const MAX_BYTES = MEDIA_MAX_BYTES;
-const DEFAULT_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
 type RequestImpl = typeof httpRequest;
 type ResolvePinnedHostnameImpl = typeof resolvePinnedHostname;
 
@@ -84,42 +84,40 @@ export async function ensureMediaDir() {
   return mediaDir;
 }
 
-export async function cleanOldMedia(ttlMs = DEFAULT_TTL_MS) {
-  const mediaDir = await ensureMediaDir();
-  const entries = await fs.readdir(mediaDir).catch(() => []);
-  const now = Date.now();
-  const removeExpiredFilesInDir = async (dir: string) => {
-    const dirEntries = await fs.readdir(dir).catch(() => []);
-    await Promise.all(
-      dirEntries.map(async (entry) => {
-        const full = path.join(dir, entry);
+/**
+ * Recursively clean old media files from a directory.
+ * Removes files older than ttlMs and empty directories.
+ */
+async function cleanOldMediaRecursive(dir: string, ttlMs: number, now: number): Promise<void> {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      const full = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Recurse into subdirectories
+        await cleanOldMediaRecursive(full, ttlMs, now);
+        // Try to remove empty directories (will fail silently if not empty)
+        await fs.rmdir(full).catch(() => {});
+      } else {
+        // Clean old files
         const stat = await fs.stat(full).catch(() => null);
-        if (!stat || !stat.isFile()) {
+        if (!stat) {
           return;
         }
         if (now - stat.mtimeMs > ttlMs) {
           await fs.rm(full).catch(() => {});
         }
-      }),
-    );
-  };
-
-  await Promise.all(
-    entries.map(async (file) => {
-      const full = path.join(mediaDir, file);
-      const stat = await fs.stat(full).catch(() => null);
-      if (!stat) {
-        return;
-      }
-      if (stat.isDirectory()) {
-        await removeExpiredFilesInDir(full);
-        return;
-      }
-      if (stat.isFile() && now - stat.mtimeMs > ttlMs) {
-        await fs.rm(full).catch(() => {});
       }
     }),
   );
+}
+
+export async function cleanOldMedia(ttlMs = DEFAULT_TTL_MS) {
+  const mediaDir = await ensureMediaDir();
+  const now = Date.now();
+  await cleanOldMediaRecursive(mediaDir, ttlMs, now);
 }
 
 function looksLikeUrl(src: string) {

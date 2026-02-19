@@ -12,27 +12,49 @@ import type {
   LinkedInClassicPeopleSearchParams,
   LinkedInPriority,
   LinkedInRoleScope,
+  LinkedInCompanyScope,
   LinkedInNetworkDistance,
+  LinkedInSalesNavigatorSearchParams,
+  LinkedInSearchRequestBody,
 } from "./types.js";
 import { buildClientOptions, resolveLinkedInAccount, getMissingCredentials } from "./accounts.js";
 import { searchLinkedIn, getSearchParameters } from "./client.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 25;
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 100;
+const DEFAULT_MAX_PAGES = 3;
+const MAX_MAX_PAGES = 20;
+
+export type TalentSearchApi = "classic" | "recruiter" | "sales_navigator";
 
 export type TalentSearchParams = {
+  /** API mode for search (classic, recruiter, or sales_navigator). */
+  api?: TalentSearchApi;
   /** General search keywords. */
   keywords?: string;
   /** Role/job title filters. */
   role?: Array<{
-    keywords: string;
+    keywords?: string;
+    id?: string;
+    is_selection?: boolean;
     priority?: LinkedInPriority;
     scope?: LinkedInRoleScope;
   }>;
   /** Skills filters. */
   skills?: Array<{
-    keywords: string;
+    keywords?: string;
+    id?: string;
     priority?: LinkedInPriority;
+  }>;
+  /** Company filters. */
+  company?: Array<{
+    keywords?: string;
+    id?: string;
+    name?: string;
+    priority?: LinkedInPriority;
+    scope?: LinkedInCompanyScope;
   }>;
   /** Location filter (free text, will be included in keywords). */
   location?: string;
@@ -40,10 +62,55 @@ export type TalentSearchParams = {
   industry?: string;
   /** Network distance filter (1, 2, or 3). */
   network_distance?: number[];
-  /** Limit number of results. */
+  /** Recruiter spotlights. */
+  spotlights?: Array<
+    | "OPEN_TO_WORK"
+    | "ACTIVE_TALENT"
+    | "REDISCOVERED_CANDIDATES"
+    | "INTERNAL_CANDIDATES"
+    | "INTERESTED_IN_YOUR_COMPANY"
+    | "HAVE_COMPANY_CONNECTIONS"
+  >;
+  /** Recruiter tenure filter in months. */
+  tenure?: {
+    min?: number;
+    max?: number;
+  };
+  /** Recruiter seniority include/exclude. */
+  seniority?: {
+    include?: Array<
+      | "owner"
+      | "partner"
+      | "cxo"
+      | "vp"
+      | "director"
+      | "manager"
+      | "senior"
+      | "entry"
+      | "training"
+      | "unpaid"
+    >;
+    exclude?: Array<
+      | "owner"
+      | "partner"
+      | "cxo"
+      | "vp"
+      | "director"
+      | "manager"
+      | "senior"
+      | "entry"
+      | "training"
+      | "unpaid"
+    >;
+  };
+  /** Limit number of results (legacy behavior). */
   limit?: number;
-  /** Use recruiter API if available. */
+  /** Legacy switch for recruiter mode. */
   useRecruiter?: boolean;
+  /** New paging controls. */
+  page_size?: number;
+  max_pages?: number;
+  cursor?: string;
   /** Account ID for multi-account setups. */
   accountId?: string;
 };
@@ -54,15 +121,26 @@ export type TalentSearchResult = {
   total_count: number;
   page_count: number;
   cursor?: string;
+  search?: {
+    api: TalentSearchApi;
+    page_size?: number;
+    max_pages?: number;
+    pages_fetched: number;
+    used_cursor: boolean;
+  };
   error?: string;
 };
 
 export type FormattedCandidate = {
+  provider_id: string;
+  public_identifier: string | null;
+  public_profile_url: string | null;
+  profile_url: string | null;
   name: string;
   headline: string;
   location: string | null;
   network_distance: string;
-  profile_url: string | null;
+  network_distance_raw: LinkedInNetworkDistance;
   skills: string[];
   current_company?: string;
   current_role?: string;
@@ -88,6 +166,19 @@ function formatNetworkDistance(distance: LinkedInNetworkDistance): string {
   }
 }
 
+function clampInteger(
+  value: number | undefined,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  const intValue = Math.trunc(value);
+  return Math.min(max, Math.max(min, intValue));
+}
+
 /**
  * Format a people search result for display.
  */
@@ -98,15 +189,43 @@ function formatCandidate(result: LinkedInPeopleResult): FormattedCandidate {
   const currentPosition = result.current_positions?.[0];
 
   return {
+    provider_id: result.id,
+    public_identifier: result.public_identifier,
+    public_profile_url: result.public_profile_url,
+    profile_url: result.public_profile_url || result.profile_url,
     name,
     headline: result.headline || "",
     location: result.location,
     network_distance: formatNetworkDistance(result.network_distance),
-    profile_url: result.public_profile_url || result.profile_url,
+    network_distance_raw: result.network_distance,
     skills,
     current_company: currentPosition?.company,
     current_role: currentPosition?.role,
   };
+}
+
+function buildSearchKeywords(params: TalentSearchParams): string | undefined {
+  const parts: string[] = [];
+  if (params.keywords) {
+    parts.push(params.keywords);
+  }
+  if (params.location) {
+    parts.push(params.location);
+  }
+  if (params.industry) {
+    parts.push(params.industry);
+  }
+  for (const r of params.role ?? []) {
+    if (r.keywords?.trim()) {
+      parts.push(r.keywords);
+    }
+  }
+  for (const s of params.skills ?? []) {
+    if (s.keywords?.trim()) {
+      parts.push(s.keywords);
+    }
+  }
+  return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
 /**
@@ -118,37 +237,11 @@ function buildClassicSearchQuery(params: TalentSearchParams): LinkedInClassicPeo
     category: "people",
   };
 
-  // Build keywords from various inputs
-  const keywordParts: string[] = [];
-  if (params.keywords) {
-    keywordParts.push(params.keywords);
-  }
-  if (params.location) {
-    keywordParts.push(params.location);
-  }
-  if (params.industry) {
-    keywordParts.push(params.industry);
+  const keywords = buildSearchKeywords(params);
+  if (keywords) {
+    query.keywords = keywords;
   }
 
-  // Add role keywords
-  if (params.role?.length) {
-    for (const r of params.role) {
-      keywordParts.push(r.keywords);
-    }
-  }
-
-  // Add skill keywords
-  if (params.skills?.length) {
-    for (const s of params.skills) {
-      keywordParts.push(s.keywords);
-    }
-  }
-
-  if (keywordParts.length > 0) {
-    query.keywords = keywordParts.join(" ");
-  }
-
-  // Network distance
   if (params.network_distance?.length) {
     query.network_distance = params.network_distance.filter(
       (d): d is 1 | 2 | 3 => d === 1 || d === 2 || d === 3,
@@ -159,44 +252,114 @@ function buildClassicSearchQuery(params: TalentSearchParams): LinkedInClassicPeo
 }
 
 /**
- * Build a recruiter search query.
+ * Build a recruiter/sales navigator search query.
  */
-function buildRecruiterSearchQuery(params: TalentSearchParams): LinkedInRecruiterSearchParams {
-  const query: LinkedInRecruiterSearchParams = {
-    api: "recruiter",
+function buildRecruiterSearchQuery(
+  params: TalentSearchParams,
+  api: "recruiter" | "sales_navigator",
+): LinkedInRecruiterSearchParams | LinkedInSalesNavigatorSearchParams {
+  const query: LinkedInRecruiterSearchParams | LinkedInSalesNavigatorSearchParams = {
+    api,
     category: "people",
   };
 
-  // Set keywords
-  if (params.keywords) {
-    query.keywords = params.keywords;
+  const keywords = buildSearchKeywords(params);
+  if (keywords) {
+    query.keywords = keywords;
   }
 
-  // Add role filters
   if (params.role?.length) {
-    query.role = params.role.map((r) => ({
-      keywords: r.keywords,
-      priority: r.priority,
-      scope: r.scope,
-    }));
+    query.role = params.role
+      .map((r) => ({
+        keywords: r.keywords,
+        id: r.id,
+        is_selection: r.is_selection,
+        priority: r.priority,
+        scope: r.scope,
+      }))
+      .filter((item) => Boolean(item.keywords || item.id));
   }
 
-  // Add skill filters
   if (params.skills?.length) {
-    query.skills = params.skills.map((s) => ({
-      keywords: s.keywords,
-      priority: s.priority,
-    }));
+    query.skills = params.skills
+      .map((s) => ({
+        keywords: s.keywords,
+        id: s.id,
+        priority: s.priority,
+      }))
+      .filter((item) => Boolean(item.keywords || item.id));
   }
 
-  // Network distance
+  if (params.company?.length) {
+    query.company = params.company
+      .map((c) => ({
+        keywords: c.keywords,
+        id: c.id,
+        name: c.name,
+        priority: c.priority,
+        scope: c.scope,
+      }))
+      .filter((item) => Boolean(item.keywords || item.id || item.name));
+  }
+
   if (params.network_distance?.length) {
     query.network_distance = params.network_distance.filter(
       (d): d is 1 | 2 | 3 => d === 1 || d === 2 || d === 3,
     );
   }
 
+  if (params.spotlights?.length) {
+    query.spotlights = params.spotlights;
+  }
+
+  if (params.tenure && (params.tenure.min !== undefined || params.tenure.max !== undefined)) {
+    query.tenure = {
+      min: params.tenure.min,
+      max: params.tenure.max,
+    };
+  }
+
+  if (params.seniority && (params.seniority.include?.length || params.seniority.exclude?.length)) {
+    query.seniority = {
+      include: params.seniority.include,
+      exclude: params.seniority.exclude,
+    };
+  }
+
   return query;
+}
+
+function dedupePeopleResults(items: LinkedInPeopleResult[]): LinkedInPeopleResult[] {
+  const seen = new Set<string>();
+  const deduped: LinkedInPeopleResult[] = [];
+  for (const item of items) {
+    const key =
+      item.id ||
+      item.public_identifier ||
+      item.public_profile_url ||
+      item.profile_url ||
+      `${item.name || "unknown"}:${item.headline || ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function buildSearchRequest(params: TalentSearchParams): {
+  api: TalentSearchApi;
+  query: LinkedInSearchRequestBody;
+} {
+  const api: TalentSearchApi = params.api ?? (params.useRecruiter ? "recruiter" : "classic");
+  if (api === "classic") {
+    return { api, query: buildClassicSearchQuery(params) };
+  }
+  return {
+    api,
+    query: buildRecruiterSearchQuery(params, api),
+  };
 }
 
 /**
@@ -206,7 +369,6 @@ export async function searchTalent(
   params: TalentSearchParams,
   cfg: OpenClawConfig,
 ): Promise<TalentSearchResult> {
-  // Resolve account
   const account = resolveLinkedInAccount({ cfg, accountId: params.accountId });
 
   if (!account.enabled) {
@@ -231,29 +393,90 @@ export async function searchTalent(
     };
   }
 
-  // Build search query
-  const searchQuery = params.useRecruiter
-    ? buildRecruiterSearchQuery(params)
-    : buildClassicSearchQuery(params);
+  const { api, query } = buildSearchRequest(params);
 
-  const limit = Math.min(params.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const usingPagingControls =
+    params.page_size !== undefined || params.max_pages !== undefined || params.cursor !== undefined;
+
+  const requestedLimit = clampInteger(params.limit, 1, MAX_LIMIT, DEFAULT_LIMIT);
 
   try {
-    const response = await searchLinkedIn(searchQuery, clientOpts, { limit });
+    if (!usingPagingControls) {
+      const response = await searchLinkedIn(query, clientOpts, { limit: requestedLimit });
+      const peopleResults = response.items.filter(
+        (item): item is LinkedInPeopleResult => item.type === "PEOPLE",
+      );
+      const candidates = dedupePeopleResults(peopleResults).map(formatCandidate);
 
-    // Filter to people results only
-    const peopleResults = response.items.filter(
-      (item): item is LinkedInPeopleResult => item.type === "PEOPLE",
-    );
+      return {
+        success: true,
+        candidates,
+        total_count: response.paging.total_count,
+        page_count: response.paging.page_count,
+        cursor: response.cursor ?? undefined,
+        search: {
+          api,
+          pages_fetched: 1,
+          used_cursor: false,
+        },
+      };
+    }
 
-    const candidates = peopleResults.map(formatCandidate);
+    const pageSize = clampInteger(params.page_size, 1, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE);
+    const maxPages = clampInteger(params.max_pages, 1, MAX_MAX_PAGES, DEFAULT_MAX_PAGES);
+    const resultLimit =
+      params.limit !== undefined ? Math.max(1, Math.trunc(params.limit)) : undefined;
+
+    let cursor = params.cursor;
+    let pagesFetched = 0;
+    let totalCount = 0;
+    let pageCount = 0;
+    const allPeople: LinkedInPeopleResult[] = [];
+
+    while (pagesFetched < maxPages) {
+      const response = await searchLinkedIn(query, clientOpts, {
+        limit: pageSize,
+        cursor,
+      });
+      pagesFetched += 1;
+      totalCount = Math.max(totalCount, response.paging.total_count);
+      pageCount += response.paging.page_count;
+
+      const pagePeople = response.items.filter(
+        (item): item is LinkedInPeopleResult => item.type === "PEOPLE",
+      );
+      allPeople.push(...pagePeople);
+
+      if (resultLimit !== undefined && dedupePeopleResults(allPeople).length >= resultLimit) {
+        cursor = response.cursor ?? undefined;
+        break;
+      }
+
+      if (!response.cursor || response.cursor === cursor) {
+        cursor = undefined;
+        break;
+      }
+
+      cursor = response.cursor;
+    }
+
+    const dedupedPeople = dedupePeopleResults(allPeople);
+    const finalPeople =
+      resultLimit !== undefined ? dedupedPeople.slice(0, resultLimit) : dedupedPeople;
 
     return {
       success: true,
-      candidates,
-      total_count: response.paging.total_count,
-      page_count: response.paging.page_count,
-      cursor: response.cursor ?? undefined,
+      candidates: finalPeople.map(formatCandidate),
+      total_count: totalCount,
+      page_count: pageCount,
+      cursor,
+      search: {
+        api,
+        page_size: pageSize,
+        max_pages: maxPages,
+        pages_fetched: pagesFetched,
+        used_cursor: Boolean(params.cursor),
+      },
     };
   } catch (err) {
     return {
@@ -337,6 +560,9 @@ export function formatSearchResultsText(result: TalentSearchResult): string {
       lines.push(`   Profile: ${c.profile_url}`);
     }
 
+    lines.push(
+      `   IDs: provider_id=${c.provider_id}, public_identifier=${c.public_identifier || "n/a"}`,
+    );
     lines.push("");
   }
 

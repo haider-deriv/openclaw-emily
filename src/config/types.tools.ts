@@ -398,8 +398,8 @@ export type ToolsConfig = {
     search?: {
       /** Enable web search tool (default: true when API key is present). */
       enabled?: boolean;
-      /** Search provider ("brave", "perplexity", or "grok"). */
-      provider?: "brave" | "perplexity" | "grok";
+      /** Search provider ("brave", "perplexity", "grok", or "exa"). */
+      provider?: "brave" | "perplexity" | "grok" | "exa";
       /** Brave Search API key (optional; defaults to BRAVE_API_KEY env var). */
       apiKey?: string;
       /** Default search results count (1-10). */
@@ -425,6 +425,11 @@ export type ToolsConfig = {
         model?: string;
         /** Include inline citations in response text as markdown links (default: false). */
         inlineCitations?: boolean;
+      };
+      /** Exa-specific configuration (used when provider="exa"). */
+      exa?: {
+        /** API key for Exa (defaults to EXA_API_KEY env var). */
+        apiKey?: string;
       };
     };
     fetch?: {
@@ -588,5 +593,18 @@ export type ToolsConfig = {
     apiKey?: string;
     /** Request timeout in milliseconds. Default: 120000. */
     timeoutMs?: number;
+  };
+  /** Talently Interview tool configuration. */
+  talentlyInterview?: {
+    /** Enable Talently Interview tool (default: true when apiUrl is present). */
+    enabled?: boolean;
+    /** URL of the Interview API (e.g., "https://skillssue.example.com/api"). */
+    apiUrl?: string;
+    /** API key for authentication. */
+    apiKey?: string;
+    /** Request timeout in milliseconds. Default: 60000. */
+    timeoutMs?: number;
+    /** List of interviewer emails that can be used for scheduling interviews. */
+    interviewerEmails?: string[];
   };
 };

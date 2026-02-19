@@ -24,6 +24,7 @@ export type {
   LinkedInSearchResponse,
   LinkedInClassicPeopleSearchParams,
   LinkedInRecruiterSearchParams,
+  LinkedInSalesNavigatorSearchParams,
   LinkedInSearchRequestBody,
   LinkedInApiError,
   // Types - Messaging
@@ -43,6 +44,8 @@ export type {
   LinkedInCreateWebhookResponse,
   LinkedInWebhookPayload,
   LinkedInUserProfile,
+  LinkedInUserActivityItem,
+  LinkedInUserActivityResponse,
 } from "./types.js";
 
 // Client functions - Talent Search
@@ -54,6 +57,7 @@ export {
   checkLinkedInConnection,
   // Client functions - Messaging
   listChats,
+  getChat,
   getMessages,
   getChatAttendees,
   sendMessage,
@@ -62,6 +66,9 @@ export {
   deleteWebhook,
   listWebhooks,
   getUserProfile,
+  getUserPosts,
+  getUserComments,
+  getUserReactions,
   listConnections,
   classifyLinkedInError,
   type LinkedInConnection,
@@ -90,7 +97,11 @@ export { searchTalent, lookupSearchParameter, formatSearchResultsText } from "./
 // Agent tools
 export {
   createLinkedInTalentSearchTool,
+  createLinkedInCandidateEnrichTool,
   createLinkedInMessageConnectionTool,
+  createLinkedInInMailCandidateTool,
+  createLinkedInListConversationsTool,
+  createLinkedInGetConversationMessagesTool,
   isLinkedInTalentSearchAvailable,
   getLinkedInTalentSearchStatus,
 } from "./tool.js";

@@ -1,22 +1,9 @@
 import type { Server as HttpServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { CANVAS_HOST_PATH } from "../canvas-host/a2ui.js";
-import { type CanvasHostHandler, createCanvasHostHandler } from "../canvas-host/server.js";
-import type { CliDeps } from "../cli/deps.js";
-import type { createSubsystemLogger } from "../logging/subsystem.js";
-import type { PluginRegistry } from "../plugins/registry.js";
-import type { RuntimeEnv } from "../runtime.js";
-import type { AuthRateLimiter } from "./auth-rate-limit.js";
-import type { ResolvedGatewayAuth } from "./auth.js";
-import type { ChatAbortControllerEntry } from "./chat-abort.js";
-import type { ControlUiRootState } from "./control-ui.js";
-import type { HooksConfigResolved } from "./hooks.js";
-import type { DedupeEntry } from "./server-shared.js";
-import type { GatewayTlsRuntime } from "./server/tls.js";
-import type { GatewayWsClient } from "./server/ws-types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { CANVAS_HOST_PATH } from "../canvas-host/a2ui.js";
 import { type CanvasHostHandler, createCanvasHostHandler } from "../canvas-host/server.js";
+import type { CliDeps } from "../cli/deps.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
 import { DirectCallFunctionName } from "../cron/types.js";
 import { resolveElevenLabsAgentsConfig } from "../elevenlabs-agents/config.js";
@@ -26,9 +13,21 @@ import {
   sendInterviewInvite,
 } from "../elevenlabs-agents/google-calendar.js";
 import { getStoredConversation, saveConversationFromWebhook } from "../elevenlabs-agents/store.js";
+import {
+  createTalentlyInterview,
+  isTalentlyInterviewConfigured,
+} from "../elevenlabs-agents/talently-interview.js";
 import { registerElevenLabsWebhookHandler } from "../elevenlabs-agents/webhook.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
+import type { createSubsystemLogger } from "../logging/subsystem.js";
+import type { PluginRegistry } from "../plugins/registry.js";
+import type { RuntimeEnv } from "../runtime.js";
+import type { AuthRateLimiter } from "./auth-rate-limit.js";
+import type { ResolvedGatewayAuth } from "./auth.js";
+import type { ChatAbortControllerEntry } from "./chat-abort.js";
+import type { ControlUiRootState } from "./control-ui.js";
+import type { HooksConfigResolved } from "./hooks.js";
 import { resolveGatewayListenHosts } from "./net.js";
 import {
   createGatewayBroadcaster,
@@ -148,7 +147,7 @@ export async function createGatewayRuntimeState(params: {
           );
         } catch (err) {
           params.log.warn(
-            `elevenlabs webhook: failed to save conversation ${payload.conversationId}: ${err}`,
+            `elevenlabs webhook: failed to save conversation ${payload.conversationId}: ${String(err)}`,
           );
         }
 
@@ -203,7 +202,7 @@ export async function createGatewayRuntimeState(params: {
             }
           } catch (err) {
             params.log.warn(
-              `elevenlabs webhook: failed to schedule callback for ${payload.conversationId}: ${err}`,
+              `elevenlabs webhook: failed to schedule callback for ${payload.conversationId}: ${String(err)}`,
             );
           }
         }
@@ -238,6 +237,40 @@ export async function createGatewayRuntimeState(params: {
                   ? calendarInviteTime.trim() || undefined
                   : undefined;
 
+              // Try to use Talently Interview API to create Zoom meeting + calendar
+              let meetingLink: string | undefined;
+              let meetingPasscode: string | undefined;
+              let talentlyCreatedCalendar = false;
+
+              if (interviewTimestamp && isTalentlyInterviewConfigured(params.cfg)) {
+                params.log.info(
+                  `elevenlabs webhook: using Talently API to create interview meeting`,
+                );
+                const talentlyResult = await createTalentlyInterview(
+                  params.cfg,
+                  {
+                    candidateName,
+                    candidateEmail: candidateEmail.trim(),
+                    interviewTimestamp,
+                    conversationId: payload.conversationId,
+                  },
+                  params.log,
+                );
+
+                if (talentlyResult.ok) {
+                  meetingLink = talentlyResult.meetingLink;
+                  meetingPasscode = talentlyResult.meetingPasscode;
+                  talentlyCreatedCalendar = true;
+                  automatedActions.push(`Zoom meeting created: ${meetingLink}`);
+                  params.log.info(`elevenlabs webhook: Talently created meeting ${meetingLink}`);
+                } else {
+                  params.log.warn(
+                    `elevenlabs webhook: Talently API failed: ${talentlyResult.error}, falling back to gog`,
+                  );
+                }
+              }
+
+              // Send email (and create calendar if Talently didn't)
               const inviteResult = await sendInterviewInvite(
                 {
                   candidateName,
@@ -246,6 +279,9 @@ export async function createGatewayRuntimeState(params: {
                   calendarId: elevenLabsConfig.calendarId,
                   conversationId: payload.conversationId,
                   templateType,
+                  meetingLink,
+                  meetingPasscode,
+                  skipCalendar: talentlyCreatedCalendar,
                 },
                 gogEnv,
                 params.log,
@@ -275,7 +311,7 @@ export async function createGatewayRuntimeState(params: {
             }
           } catch (err) {
             params.log.warn(
-              `elevenlabs webhook: failed to send interview invite for ${payload.conversationId}: ${err}`,
+              `elevenlabs webhook: failed to send interview invite for ${payload.conversationId}: ${String(err)}`,
             );
           }
         }

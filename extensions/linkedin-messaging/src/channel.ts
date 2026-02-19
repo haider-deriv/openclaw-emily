@@ -275,6 +275,7 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
       };
 
       try {
+        // Try regular message first (works for 1st-degree connections)
         const result = await startChat(clientOpts, {
           attendees_ids: [to],
           text,
@@ -285,8 +286,26 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
           messageId: result.message_id ?? undefined,
           chatId: result.chat_id ?? undefined,
         };
-      } catch (err) {
-        throw err;
+      } catch (firstErr) {
+        // If regular message fails, retry with InMail (for non-connections)
+        try {
+          const inmailResult = await startChat(clientOpts, {
+            attendees_ids: [to],
+            text,
+            linkedin: {
+              inmail: true,
+            },
+          });
+          return {
+            channel: "linkedin",
+            ok: true,
+            messageId: inmailResult.message_id ?? undefined,
+            chatId: inmailResult.chat_id ?? undefined,
+          };
+        } catch {
+          // If InMail also fails, throw the original error
+          throw firstErr;
+        }
       }
     },
     sendMedia: async ({ to, text, mediaUrl, cfg }) => {
@@ -306,17 +325,38 @@ export const linkedInMessagingPlugin: ChannelPlugin<ResolvedLinkedInAccount> = {
 
       const messageText = mediaUrl ? `${text}\n\n${mediaUrl}` : text;
 
-      const result = await startChat(clientOpts, {
-        attendees_ids: [to],
-        text: messageText,
-      });
-
-      return {
-        channel: "linkedin",
-        ok: true,
-        messageId: result.message_id ?? undefined,
-        chatId: result.chat_id ?? undefined,
-      };
+      try {
+        // Try regular message first
+        const result = await startChat(clientOpts, {
+          attendees_ids: [to],
+          text: messageText,
+        });
+        return {
+          channel: "linkedin",
+          ok: true,
+          messageId: result.message_id ?? undefined,
+          chatId: result.chat_id ?? undefined,
+        };
+      } catch (firstErr) {
+        // Retry with InMail for non-connections
+        try {
+          const inmailResult = await startChat(clientOpts, {
+            attendees_ids: [to],
+            text: messageText,
+            linkedin: {
+              inmail: true,
+            },
+          });
+          return {
+            channel: "linkedin",
+            ok: true,
+            messageId: inmailResult.message_id ?? undefined,
+            chatId: inmailResult.chat_id ?? undefined,
+          };
+        } catch {
+          throw firstErr;
+        }
+      }
     },
   },
   status: {

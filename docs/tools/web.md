@@ -1,9 +1,9 @@
 ---
-summary: "Web search + fetch tools (Brave Search API, Perplexity direct/OpenRouter)"
+summary: "Web search + fetch tools (Brave, Perplexity, Grok, Exa)"
 read_when:
   - You want to enable web_search or web_fetch
-  - You need Brave Search API key setup
-  - You want to use Perplexity Sonar for web search
+  - You need web_search provider API key setup
+  - You want to use Exa for candidate sourcing searches
 title: "Web Tools"
 ---
 
@@ -11,7 +11,7 @@ title: "Web Tools"
 
 OpenClaw ships two lightweight web tools:
 
-- `web_search` — Search the web via Brave Search API (default) or Perplexity Sonar (direct or via OpenRouter).
+- `web_search` — Search the web via Brave (default), Perplexity, Grok, or Exa.
 - `web_fetch` — HTTP fetch + readable extraction (HTML → markdown/text).
 
 These are **not** browser automation. For JS-heavy sites or logins, use the
@@ -22,6 +22,8 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 - `web_search` calls your configured provider and returns results.
   - **Brave** (default): returns structured results (title, URL, snippet).
   - **Perplexity**: returns AI-synthesized answers with citations from real-time web search.
+  - **Grok**: returns AI-synthesized answers with citations from real-time web search.
+  - **Exa**: returns structured discovery results and supports people/company-focused search categories and domain filters.
 - Results are cached by query for 15 minutes (configurable).
 - `web_fetch` does a plain HTTP GET and extracts readable content
   (HTML → markdown/text). It does **not** execute JavaScript.
@@ -29,12 +31,14 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 
 ## Choosing a search provider
 
-| Provider            | Pros                                         | Cons                                     | API Key                                      |
-| ------------------- | -------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
-| **Brave** (default) | Fast, structured results, free tier          | Traditional search results               | `BRAVE_API_KEY`                              |
-| **Perplexity**      | AI-synthesized answers, citations, real-time | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
+| Provider            | Pros                                                      | Cons                                     | API Key                                      |
+| ------------------- | --------------------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| **Brave** (default) | Fast, structured results, free tier                       | Traditional search results               | `BRAVE_API_KEY`                              |
+| **Perplexity**      | AI-synthesized answers, citations, real-time              | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
+| **Grok**            | AI-synthesized answers, citations, real-time              | Requires xAI API access                  | `XAI_API_KEY`                                |
+| **Exa**             | Strong semantic discovery, people/company category search | Requires Exa API access                  | `EXA_API_KEY`                                |
 
-See [Brave Search setup](/brave-search) and [Perplexity Sonar](/perplexity) for provider-specific details.
+See [Brave Search setup](/brave-search) and [Perplexity Sonar](/perplexity) for provider-specific details. For Exa request fields, see [Exa Search API](https://exa.ai/docs/reference/search).
 
 Set the provider in config:
 
@@ -43,7 +47,24 @@ Set the provider in config:
   tools: {
     web: {
       search: {
-        provider: "brave", // or "perplexity"
+        provider: "brave", // or "perplexity", "grok", "exa"
+      },
+    },
+  },
+}
+```
+
+Example: switch to Exa:
+
+```json5
+{
+  tools: {
+    web: {
+      search: {
+        provider: "exa",
+        exa: {
+          apiKey: "exa-...",
+        },
       },
     },
   },
@@ -149,6 +170,8 @@ Search the web using your configured provider.
 - API key for your chosen provider:
   - **Brave**: `BRAVE_API_KEY` or `tools.web.search.apiKey`
   - **Perplexity**: `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY`, or `tools.web.search.perplexity.apiKey`
+  - **Grok**: `XAI_API_KEY` or `tools.web.search.grok.apiKey`
+  - **Exa**: `EXA_API_KEY` or `tools.web.search.exa.apiKey`
 
 ### Config
 
@@ -178,6 +201,15 @@ Search the web using your configured provider.
 - `freshness` (optional): filter by discovery time
   - Brave: `pd`, `pw`, `pm`, `py`, or `YYYY-MM-DDtoYYYY-MM-DD`
   - Perplexity: `pd`, `pw`, `pm`, `py`
+- `search_type` (optional, Exa only): `auto`, `neural`, `fast`, `deep`, `instant`
+- `category` (optional, Exa only): examples include `people`, `company`, `news`, `research paper`, `tweet`
+- `include_domains` (optional, Exa only): domain allowlist (for example `["linkedin.com"]`)
+- `exclude_domains` (optional, Exa only): domain blocklist
+
+Notes for Exa people search:
+
+- Exa only accepts LinkedIn domains in `include_domains` when `category` is `people`.
+- Exa does not support `exclude_domains` when `category` is `people`.
 
 **Examples:**
 
@@ -202,6 +234,15 @@ await web_search({
 await web_search({
   query: "TMBG interview",
   freshness: "pw",
+});
+
+// Candidate sourcing via Exa (LinkedIn people search)
+await web_search({
+  query: "staff backend engineer fintech new york python kubernetes",
+  category: "people",
+  include_domains: ["linkedin.com"],
+  search_type: "deep",
+  count: 10,
 });
 ```
 

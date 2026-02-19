@@ -1,16 +1,17 @@
 import type { OpenClawConfig } from "../config/config.js";
-import type { GatewayMessageChannel } from "../utils/message-channel.js";
-import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
-import type { AnyAgentTool } from "./tools/common.js";
 import { createElevenLabsAgentsTool } from "../elevenlabs-agents/tool.js";
 import {
   createLinkedInTalentSearchTool,
+  createLinkedInCandidateEnrichTool,
   createLinkedInMessageConnectionTool,
+  createLinkedInInMailCandidateTool,
+  createLinkedInListConversationsTool,
+  createLinkedInGetConversationMessagesTool,
 } from "../linkedin/tool.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { createTalentlyCVAnalysisTool } from "../talently-cv-analysis/tool.js";
+import { createTalentlyInterviewTool } from "../talently-interview/tool.js";
 import { createTalentlyTool } from "../talently/tool.js";
-import { resolvePluginTools } from "../plugins/tools.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -179,11 +180,39 @@ export function createOpenClawTools(options?: {
     tools.push(linkedInTalentTool);
   }
 
+  const linkedInCandidateEnrichTool = createLinkedInCandidateEnrichTool({
+    config: options?.config,
+  });
+  if (linkedInCandidateEnrichTool) {
+    tools.push(linkedInCandidateEnrichTool);
+  }
+
   const linkedInMessageTool = createLinkedInMessageConnectionTool({
     config: options?.config,
   });
   if (linkedInMessageTool) {
     tools.push(linkedInMessageTool);
+  }
+
+  const linkedInInMailTool = createLinkedInInMailCandidateTool({
+    config: options?.config,
+  });
+  if (linkedInInMailTool) {
+    tools.push(linkedInInMailTool);
+  }
+
+  const linkedInListConversationsTool = createLinkedInListConversationsTool({
+    config: options?.config,
+  });
+  if (linkedInListConversationsTool) {
+    tools.push(linkedInListConversationsTool);
+  }
+
+  const linkedInGetConversationMessagesTool = createLinkedInGetConversationMessagesTool({
+    config: options?.config,
+  });
+  if (linkedInGetConversationMessagesTool) {
+    tools.push(linkedInGetConversationMessagesTool);
   }
 
   // ElevenLabs Agents tool
@@ -209,6 +238,14 @@ export function createOpenClawTools(options?: {
   });
   if (talentlyCVAnalysisTool) {
     tools.push(talentlyCVAnalysisTool);
+  }
+
+  // Talently Interview tool
+  const talentlyInterviewTool = createTalentlyInterviewTool({
+    config: options?.config,
+  });
+  if (talentlyInterviewTool) {
+    tools.push(talentlyInterviewTool);
   }
 
   const pluginTools = resolvePluginTools({

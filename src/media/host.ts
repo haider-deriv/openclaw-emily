@@ -8,7 +8,7 @@ import { startMediaServer } from "./server.js";
 import { saveMediaSource } from "./store.js";
 
 const DEFAULT_PORT = 42873;
-const TTL_MS = 2 * 60 * 1000;
+const TTL_MS = 24 * 60 * 60 * 1000; // 1 day
 
 let mediaServer: import("http").Server | null = null;
 

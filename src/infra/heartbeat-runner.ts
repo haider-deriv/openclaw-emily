@@ -582,29 +582,23 @@ export async function runHeartbeatOnce(opts: {
   const isExecEvent = opts.reason === "exec-event";
   const isCronEvent = Boolean(opts.reason?.startsWith("cron:"));
   const isElevenLabsEvent = Boolean(opts.reason?.startsWith("elevenlabs:"));
-  const pendingEvents =
-    isExecEvent || isCronEvent || isElevenLabsEvent ? peekSystemEvents(sessionKey) : [];
-  const cronEvents = pendingEvents.filter((evt) => isCronSystemEvent(evt));
-  const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
-  const hasCronEvents = isCronEvent && cronEvents.length > 0;
-  const hasElevenLabsEvents = isElevenLabsEvent && pendingEvents.length > 0;
   const pendingEventEntries = peekSystemEventEntries(sessionKey);
   const hasTaggedCronEvents = pendingEventEntries.some((event) =>
     event.contextKey?.startsWith("cron:"),
   );
-  const shouldInspectPendingEvents = isExecEvent || isCronEventReason || hasTaggedCronEvents;
+  const shouldInspectPendingEvents = isExecEvent || isCronEvent || hasTaggedCronEvents;
   const pendingEvents = shouldInspectPendingEvents
     ? pendingEventEntries.map((event) => event.text)
     : [];
   const cronEvents = pendingEventEntries
     .filter(
       (event) =>
-        (isCronEventReason || event.contextKey?.startsWith("cron:")) &&
-        isCronSystemEvent(event.text),
+        (isCronEvent || event.contextKey?.startsWith("cron:")) && isCronSystemEvent(event.text),
     )
     .map((event) => event.text);
   const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
   const hasCronEvents = cronEvents.length > 0;
+  const hasElevenLabsEvents = isElevenLabsEvent && pendingEvents.length > 0;
   const prompt = hasExecCompletion
     ? EXEC_EVENT_PROMPT
     : hasCronEvents

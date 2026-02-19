@@ -35,6 +35,12 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   "group:automation": ["cron", "gateway"],
   // Messaging surface
   "group:messaging": ["message"],
+  // Recruiting surface
+  "group:recruiting": [
+    "linkedin_talent_search",
+    "linkedin_candidate_enrich",
+    "linkedin_message_connection",
+  ],
   // Nodes + device tools
   "group:nodes": ["nodes"],
   // All OpenClaw native tools (excludes provider plugins).
@@ -57,6 +63,9 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "web_search",
     "web_fetch",
     "image",
+    "linkedin_talent_search",
+    "linkedin_candidate_enrich",
+    "linkedin_message_connection",
   ],
 };
 
