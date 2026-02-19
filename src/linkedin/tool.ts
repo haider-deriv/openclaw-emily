@@ -23,6 +23,9 @@ import {
   getUserPosts,
   getUserComments,
   getUserReactions,
+  listChats,
+  getMessages,
+  getChatAttendees,
   type LinkedInConnection,
 } from "./client.js";
 import { searchTalent, formatSearchResultsText } from "./search.js";
@@ -1242,6 +1245,343 @@ export function createLinkedInInMailCandidateTool(options?: {
               : classified.type === "rate_limit"
                 ? "Wait a few minutes and try again."
                 : "Verify the candidate identifier is correct and try again.",
+        });
+      }
+    },
+  };
+}
+
+// =============================================================================
+// LinkedIn List Conversations Tool
+// =============================================================================
+
+const LinkedInListConversationsSchema = Type.Object({
+  name: Type.Optional(
+    Type.String({
+      description:
+        "Filter conversations by attendee name (partial match). " +
+        "Use this to find conversations with a specific person.",
+    }),
+  ),
+  limit: Type.Optional(
+    Type.Number({
+      description: "Maximum number of conversations to return. Default: 20, max: 50.",
+      minimum: 1,
+      maximum: 50,
+    }),
+  ),
+  unread_only: Type.Optional(
+    Type.Boolean({
+      description: "If true, only return conversations with unread messages.",
+    }),
+  ),
+  account_id: Type.Optional(
+    Type.String({
+      description: "Account ID for multi-account setups.",
+    }),
+  ),
+});
+
+/**
+ * Create the LinkedIn list conversations tool.
+ * This tool lists all LinkedIn conversations (both regular messages and InMail).
+ */
+export function createLinkedInListConversationsTool(options?: {
+  config?: OpenClawConfig;
+}): AnyAgentTool | null {
+  const cfg = options?.config;
+
+  const account = resolveLinkedInAccount({ cfg: cfg ?? ({} as OpenClawConfig) });
+  if (!account.enabled) {
+    return null;
+  }
+
+  return {
+    label: "LinkedIn List Conversations",
+    name: "linkedin_list_conversations",
+    description:
+      "List LinkedIn conversations (DMs and InMail). " +
+      "Use this to find conversations with anyone you've messaged, including non-connections reached via InMail. " +
+      "You can filter by name to find a specific conversation. " +
+      "Use linkedin_get_conversation_messages with the returned chat_id to read the full conversation.",
+    parameters: LinkedInListConversationsSchema,
+    execute: async (_toolCallId, args) => {
+      const params = args as Record<string, unknown>;
+
+      const nameFilter = readStringParam(params, "name");
+      const limit = readNumberParam(params, "limit", { integer: true }) ?? 20;
+      const unreadOnly = params.unread_only === true;
+      const accountId = readStringParam(params, "account_id");
+
+      const resolvedAccount = accountId
+        ? resolveLinkedInAccount({ cfg: cfg ?? ({} as OpenClawConfig), accountId })
+        : account;
+
+      const opts = buildClientOptions(resolvedAccount);
+      if (!opts) {
+        const missing = getMissingCredentials(resolvedAccount);
+        return jsonResult({
+          success: false,
+          error: `LinkedIn is not configured. Missing: ${missing.join(", ")}`,
+        });
+      }
+
+      try {
+        // Fetch more chats than needed to allow for filtering
+        const fetchLimit = nameFilter ? Math.min(limit * 3, 100) : limit;
+        const chatsResponse = await listChats(opts, {
+          limit: fetchLimit,
+          unread: unreadOnly ? true : undefined,
+        });
+
+        const conversations: Array<{
+          chat_id: string;
+          attendees: Array<{ id: string; name: string; profile_url?: string }>;
+          last_message_at: string | null;
+          unread_count: number;
+          is_inmail: boolean;
+          subject: string | null;
+          chat_type: string;
+        }> = [];
+
+        // Fetch attendees for each chat and filter by name if needed
+        for (const chat of chatsResponse.items) {
+          if (conversations.length >= limit) {
+            break;
+          }
+
+          try {
+            const attendeesResponse = await getChatAttendees(opts, chat.id, { limit: 10 });
+
+            // Filter out self from attendees
+            const otherAttendees = attendeesResponse.items
+              .filter((a) => a.is_self !== 1)
+              .map((a) => ({
+                id: a.provider_id,
+                name: a.display_name || "Unknown",
+                profile_url: a.profile_url,
+              }));
+
+            // If name filter is provided, check if any attendee matches
+            if (nameFilter) {
+              const lowerFilter = nameFilter.toLowerCase();
+              const matches = otherAttendees.some((a) =>
+                a.name.toLowerCase().includes(lowerFilter),
+              );
+              if (!matches) {
+                continue;
+              }
+            }
+
+            const isInmail =
+              chat.content_type === "inmail" ||
+              (chat.folder?.some((f) => f.includes("RECRUITER") || f.includes("SALES_NAVIGATOR")) ??
+                false);
+
+            conversations.push({
+              chat_id: chat.id,
+              attendees: otherAttendees,
+              last_message_at: chat.timestamp,
+              unread_count: chat.unread_count,
+              is_inmail: isInmail,
+              subject: chat.subject ?? null,
+              chat_type: chat.type === 0 ? "direct" : chat.type === 1 ? "group" : "channel",
+            });
+          } catch {
+            // Skip chats where we can't fetch attendees
+            continue;
+          }
+        }
+
+        if (conversations.length === 0 && nameFilter) {
+          return jsonResult({
+            success: true,
+            conversations: [],
+            count: 0,
+            message:
+              `No conversations found matching "${nameFilter}". ` +
+              "Try a different spelling or check if they were messaged from a different account.",
+          });
+        }
+
+        // Format for display
+        const formatted = conversations
+          .map((c, i) => {
+            const names = c.attendees.map((a) => a.name).join(", ");
+            const inmail = c.is_inmail ? " (InMail)" : "";
+            const unread = c.unread_count > 0 ? ` [${c.unread_count} unread]` : "";
+            const subject = c.subject ? `\n   Subject: ${c.subject}` : "";
+            return `${i + 1}. ${names}${inmail}${unread}\n   Chat ID: ${c.chat_id}${subject}`;
+          })
+          .join("\n\n");
+
+        return jsonResult({
+          success: true,
+          conversations,
+          count: conversations.length,
+          formatted,
+          instruction:
+            "To read messages from a conversation, use linkedin_get_conversation_messages with the chat_id.",
+        });
+      } catch (err) {
+        const classified = classifyLinkedInError(err);
+        return jsonResult({
+          success: false,
+          error: classified.userFriendlyMessage,
+          errorType: classified.type,
+          canRetry: classified.isTransient,
+        });
+      }
+    },
+  };
+}
+
+// =============================================================================
+// LinkedIn Get Conversation Messages Tool
+// =============================================================================
+
+const LinkedInGetConversationMessagesSchema = Type.Object({
+  chat_id: Type.String({
+    description: "The chat/conversation ID. Get this from linkedin_list_conversations results.",
+  }),
+  limit: Type.Optional(
+    Type.Number({
+      description: "Maximum number of messages to return. Default: 20, max: 50.",
+      minimum: 1,
+      maximum: 50,
+    }),
+  ),
+  cursor: Type.Optional(
+    Type.String({
+      description: "Pagination cursor to fetch older messages.",
+    }),
+  ),
+  account_id: Type.Optional(
+    Type.String({
+      description: "Account ID for multi-account setups.",
+    }),
+  ),
+});
+
+/**
+ * Create the LinkedIn get conversation messages tool.
+ * This tool retrieves messages from a specific LinkedIn conversation.
+ */
+export function createLinkedInGetConversationMessagesTool(options?: {
+  config?: OpenClawConfig;
+}): AnyAgentTool | null {
+  const cfg = options?.config;
+
+  const account = resolveLinkedInAccount({ cfg: cfg ?? ({} as OpenClawConfig) });
+  if (!account.enabled) {
+    return null;
+  }
+
+  return {
+    label: "LinkedIn Get Conversation Messages",
+    name: "linkedin_get_conversation_messages",
+    description:
+      "Get messages from a specific LinkedIn conversation. " +
+      "Use linkedin_list_conversations first to find the chat_id. " +
+      "Returns messages in reverse chronological order (newest first).",
+    parameters: LinkedInGetConversationMessagesSchema,
+    execute: async (_toolCallId, args) => {
+      const params = args as Record<string, unknown>;
+
+      const chatId = readStringParam(params, "chat_id");
+      const limit = readNumberParam(params, "limit", { integer: true }) ?? 20;
+      const cursor = readStringParam(params, "cursor");
+      const accountId = readStringParam(params, "account_id");
+
+      if (!chatId) {
+        return jsonResult({
+          success: false,
+          error: "chat_id is required. Use linkedin_list_conversations to find the chat_id.",
+        });
+      }
+
+      const resolvedAccount = accountId
+        ? resolveLinkedInAccount({ cfg: cfg ?? ({} as OpenClawConfig), accountId })
+        : account;
+
+      const opts = buildClientOptions(resolvedAccount);
+      if (!opts) {
+        const missing = getMissingCredentials(resolvedAccount);
+        return jsonResult({
+          success: false,
+          error: `LinkedIn is not configured. Missing: ${missing.join(", ")}`,
+        });
+      }
+
+      try {
+        // Fetch messages and attendees in parallel
+        const [messagesResponse, attendeesResponse] = await Promise.all([
+          getMessages(opts, chatId, { limit, cursor }),
+          getChatAttendees(opts, chatId, { limit: 20 }),
+        ]);
+
+        // Build attendee lookup map
+        const attendeeMap = new Map<string, { name: string; profile_url?: string }>();
+        for (const attendee of attendeesResponse.items) {
+          attendeeMap.set(attendee.provider_id, {
+            name: attendee.display_name || "Unknown",
+            profile_url: attendee.profile_url,
+          });
+        }
+
+        // Format messages
+        const messages = messagesResponse.items.map((msg) => {
+          const senderInfo = attendeeMap.get(msg.sender_id);
+          return {
+            id: msg.id,
+            text: msg.text,
+            sender_id: msg.sender_id,
+            sender_name: senderInfo?.name ?? "Unknown",
+            timestamp: msg.timestamp,
+            is_sender: msg.is_sender === 1,
+            message_type: msg.message_type ?? "MESSAGE",
+            subject: msg.subject ?? null,
+            has_attachments: msg.attachments?.length > 0,
+          };
+        });
+
+        // Build attendee list (excluding self)
+        const attendees = attendeesResponse.items
+          .filter((a) => a.is_self !== 1)
+          .map((a) => ({
+            id: a.provider_id,
+            name: a.display_name || "Unknown",
+            profile_url: a.profile_url,
+          }));
+
+        // Format for display
+        const formatted = messages
+          .map((m) => {
+            const sender = m.is_sender ? "You" : m.sender_name;
+            const date = new Date(m.timestamp).toLocaleString();
+            const type = m.message_type !== "MESSAGE" ? ` [${m.message_type}]` : "";
+            const subject = m.subject ? `\n   Subject: ${m.subject}` : "";
+            return `[${date}] ${sender}${type}:${subject}\n   ${m.text || "(no text)"}`;
+          })
+          .join("\n\n");
+
+        return jsonResult({
+          success: true,
+          chat_id: chatId,
+          messages,
+          attendees,
+          count: messages.length,
+          cursor: messagesResponse.cursor,
+          has_more: messagesResponse.cursor !== null,
+          formatted,
+        });
+      } catch (err) {
+        const classified = classifyLinkedInError(err);
+        return jsonResult({
+          success: false,
+          error: classified.userFriendlyMessage,
+          errorType: classified.type,
+          canRetry: classified.isTransient,
         });
       }
     },
