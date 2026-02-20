@@ -18,6 +18,8 @@ describe("sendMessageSlack blocks", () => {
       expect.objectContaining({
         channel: "C123",
         text: "Shared a Block Kit message",
+        unfurl_links: false,
+        unfurl_media: false,
         blocks: [{ type: "divider" }],
       }),
     );
