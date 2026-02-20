@@ -114,3 +114,6 @@ Notes
 - Docs supports export/cat/copy. In-place edits require a Docs API client (not in gog).
 - Confirm before sending mail or creating events.
 - `gog gmail search` returns one row per thread; use `gog gmail messages search` when you need every individual email returned separately.
+
+- **Reading full threads:** Use `gog gmail thread get <threadId>` to read all messages in a thread. Add `--download --out-dir <dir>` to download attachments. This is essential for reading replies and extracting attachments (e.g., CVs).
+- **Email intake workflow:** Search → get thread IDs → `gog gmail thread get <id> --download --out-dir <dir>` → process attachments.
