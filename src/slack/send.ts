@@ -97,6 +97,8 @@ async function postSlackMessageBestEffort(params: {
     channel: params.channelId,
     text: params.text,
     thread_ts: params.threadTs,
+    unfurl_links: false,
+    unfurl_media: false,
     ...(params.blocks?.length ? { blocks: params.blocks } : {}),
   };
   try {
